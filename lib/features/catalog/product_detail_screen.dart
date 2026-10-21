@@ -4,7 +4,6 @@ import '../../core/services/catalog_service.dart';
 import '../../core/services/cart_service.dart';
 import '../../core/services/reservation_service.dart';
 import '../../core/services/auth_service.dart';
-import '../../core/services/api_service.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/product_image.dart';
 import '../ar_fitting/ai_tryon_screen.dart';
@@ -294,7 +293,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             builder: (context) => AITryonScreen(
                               productId: _product['id'],
                               productName: _product['name'],
-                              productImageUrl: _product['image_url'],
+                              productImageUrl: _product['garment_image_url'] ?? _product['image_url'],
                             ),
                           ),
                         );

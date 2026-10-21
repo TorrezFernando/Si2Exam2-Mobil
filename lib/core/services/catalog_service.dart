@@ -3,7 +3,7 @@ import 'api_service.dart';
 
 class CatalogService {
   static Future<List<dynamic>> getProducts() async {
-    final response = await ApiService.get('/products/');
+    final response = await ApiService.get('/products');
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {

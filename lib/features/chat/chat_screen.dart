@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../core/services/api_service.dart';
 import '../../core/theme/theme.dart';
 import 'dart:convert';
@@ -94,7 +93,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final messagesJson = _messages.map((m) => {'role': m.role, 'content': m.content}).toList();
-      final response = await ApiService.post('/ai/chat/', {'messages': messagesJson});
+      final response = await ApiService.post('/ai/chat', {'messages': messagesJson});
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

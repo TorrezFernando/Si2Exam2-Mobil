@@ -1,22 +1,23 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:http_parser/http_parser.dart';
 
 class ApiService {
   static String get baseUrl {
-    if (kIsWeb) return 'http://127.0.0.1:8000/api/v1';
-    // Nota: Para dispositivos físicos Android usar 127.0.0.1 y ejecutar 'adb reverse tcp:8000 tcp:8000'
-    if (Platform.isAndroid) return 'http://127.0.0.1:8000/api/v1';
-    return 'http://127.0.0.1:8000/api/v1';
+    const value = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:8000/api/v1');
+    final uri = Uri.parse(value);
+    if (kReleaseMode && uri.scheme != 'https') {
+      throw StateError('Configura API_BASE_URL con HTTPS para producción');
+    }
+    return value.replaceFirst(RegExp(r'/+$'), '');
   }
 
   static String getFullImageUrl(String path) {
     if (path.startsWith('http')) return path;
     if (!path.startsWith('/')) path = '/$path';
-    return 'http://127.0.0.1:8000$path';
+    return Uri.parse(baseUrl).resolve(path).toString();
   }
 
   static Future<Map<String, String>> _getHeaders() async {
@@ -30,7 +31,7 @@ class ApiService {
 
   static Future<http.Response> get(String endpoint) async {
     final headers = await _getHeaders();
-    return http.get(Uri.parse('$baseUrl$endpoint'), headers: headers);
+    return http.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(const Duration(seconds: 30));
   }
 
   static Future<http.Response> post(String endpoint, Map<String, dynamic> body) async {
@@ -39,7 +40,7 @@ class ApiService {
       Uri.parse('$baseUrl$endpoint'),
       headers: headers,
       body: jsonEncode(body),
-    );
+    ).timeout(const Duration(seconds: 30));
   }
   
   static Future<http.Response> postForm(String endpoint, Map<String, String> body) async {
@@ -49,7 +50,7 @@ class ApiService {
       Uri.parse('$baseUrl$endpoint'),
       headers: headers,
       body: body,
-    );
+    ).timeout(const Duration(seconds: 30));
   }
 
   static Future<http.Response> patch(String endpoint, Map<String, dynamic> body) async {
@@ -58,12 +59,12 @@ class ApiService {
       Uri.parse('$baseUrl$endpoint'),
       headers: headers,
       body: jsonEncode(body),
-    );
+    ).timeout(const Duration(seconds: 30));
   }
 
   static Future<http.Response> delete(String endpoint) async {
     final headers = await _getHeaders();
-    return http.delete(Uri.parse('$baseUrl$endpoint'), headers: headers);
+    return http.delete(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(const Duration(seconds: 30));
   }
 
   static Future<Map<String, dynamic>> generateAiTryOn(int productId, String imagePath) async {

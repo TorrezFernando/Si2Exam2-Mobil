@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:typed_data';
+import 'package:http_parser/http_parser.dart';
 import 'api_service.dart';
 
 class AiService {
@@ -34,6 +34,7 @@ class AiService {
       'user_photo',
       photoBytes,
       filename: 'user_photo.$ext',
+      contentType: MediaType.parse(mimeType),
     ));
 
     final streamedResponse = await request.send().timeout(

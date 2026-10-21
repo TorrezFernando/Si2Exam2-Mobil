@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/catalog_service.dart';
 import '../../core/services/cart_service.dart';
-import '../../core/services/api_service.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/product_image.dart';
 import '../cart/cart_screen.dart';
@@ -23,7 +22,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
   List<dynamic> _filteredProducts = [];
   List<dynamic> _recommendedProducts = [];
   bool _isLoading = true;
-  bool _isLoadingRecommended = false;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -56,16 +54,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   Future<void> _fetchProducts() async {
     try {
+      final auth = Provider.of<AuthService>(context, listen: false);
       final products = await CatalogService.getProducts();
       
       List<dynamic> recommended = [];
-      final auth = Provider.of<AuthService>(context, listen: false);
       if (auth.token != null) {
         try {
           recommended = await CatalogService.getRecommendedProducts(limit: 4);
         } catch (_) {}
       }
 
+      if (!mounted) return;
       setState(() {
         _products = products;
         _filteredProducts = products;
@@ -73,6 +72,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

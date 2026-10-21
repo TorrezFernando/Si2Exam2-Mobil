@@ -1,7 +1,6 @@
-import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
+import '../../core/widgets/product_image.dart';
 import '../../core/services/api_service.dart';
 import '../../core/theme/theme.dart';
 
@@ -26,6 +25,11 @@ class _AITryonScreenState extends State<AITryonScreen> {
   bool _isProcessing = false;
   String? _resultImageUrl;
   String? _error;
+  bool _arMode = true;
+  double _scale = 1;
+  double _startScale = 1;
+  Offset _offset = Offset.zero;
+  double _opacity = 0.85;
 
   @override
   void initState() {
@@ -34,22 +38,16 @@ class _AITryonScreenState extends State<AITryonScreen> {
   }
 
   Future<void> _initializeCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
-
-    final frontCamera = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
-    );
-
-    _cameraController = CameraController(
-      frontCamera,
-      ResolutionPreset.high,
-      enableAudio: false,
-    );
-
-    await _cameraController!.initialize();
-    if (mounted) setState(() {});
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) throw Exception('No hay cámara disponible');
+      final frontCamera = cameras.firstWhere((c) => c.lensDirection == CameraLensDirection.front, orElse: () => cameras.first);
+      final controller = CameraController(frontCamera, ResolutionPreset.high, enableAudio: false);
+      _cameraController = controller;
+      await controller.initialize();
+      if (!mounted) { await controller.dispose(); return; }
+      setState(() {});
+    } catch (e) { if (mounted) setState(() => _error = 'No se pudo iniciar la cámara. Revisa los permisos.'); }
   }
 
   Future<void> _takePhotoAndProcess() async {
@@ -105,13 +103,31 @@ class _AITryonScreenState extends State<AITryonScreen> {
             child: CameraPreview(_cameraController!),
           ),
         ),
+        if (_arMode && widget.productImageUrl != null)
+          Center(child: GestureDetector(
+            onScaleStart: (_) => _startScale = _scale,
+            onScaleUpdate: (details) => setState(() {
+              _scale = (_startScale * details.scale).clamp(0.3, 3.0);
+              _offset += details.focalPointDelta;
+            }),
+            child: Transform.translate(offset: _offset, child: Transform.scale(scale: _scale,
+              child: Opacity(opacity: _opacity, child: ProductImage(imageUrl: widget.productImageUrl, width: 240, height: 320, fit: BoxFit.contain)))),
+          )),
+        Positioned(top: 110, left: 16, right: 16, child: Column(children: [
+          SegmentedButton<bool>(segments: const [ButtonSegment(value: true, label: Text('AR 2D')), ButtonSegment(value: false, label: Text('Foto con IA'))],
+            selected: {_arMode}, onSelectionChanged: (selection) => setState(() => _arMode = selection.first)),
+          if (_arMode) ...[
+            const Text('Arrastra y pellizca para ajustar la prenda. Vista orientativa.', style: TextStyle(color: Colors.white), textAlign: TextAlign.center),
+            Slider(value: _opacity, min: 0.2, max: 1, onChanged: (value) => setState(() => _opacity = value)),
+          ],
+        ])),
         // Overlay guide
-        Positioned.fill(
+        if (!_arMode) Positioned.fill(
           child: CustomPaint(
             painter: SilhouettePainter(),
           ),
         ),
-        Align(
+        if (!_arMode) Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
             padding: const EdgeInsets.only(bottom: 40.0),
@@ -187,7 +203,7 @@ class _AITryonScreenState extends State<AITryonScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text('Probador IA: ${widget.productName}'),
+        title: Text('Probador: ${widget.productName}'),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -225,7 +241,7 @@ class _AITryonScreenState extends State<AITryonScreen> {
                               style: const TextStyle(color: Colors.white)),
                             const SizedBox(height: 24),
                             ElevatedButton(
-                              onPressed: () => setState(() => _error = null),
+                              onPressed: () { setState(() => _error = null); if (_cameraController == null || !_cameraController!.value.isInitialized) _initializeCamera(); },
                               child: const Text('Reintentar'),
                             )
                           ],
@@ -262,9 +278,6 @@ class SilhouettePainter extends CustomPainter {
     
     canvas.drawPath(path, paint);
   }
-
-  @override
-  bool strokeDashPattern = false;
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;

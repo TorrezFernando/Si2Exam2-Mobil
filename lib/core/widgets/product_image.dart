@@ -6,60 +6,79 @@ import '../theme/theme.dart';
 
 class ProductImage extends StatelessWidget {
   final String? imageUrl;
-  final BoxFit fit;
+  final BoxFit? fit;
+  final double? width;
+  final double? height;
 
   const ProductImage({
-    Key? key,
+    super.key,
     this.imageUrl,
-    this.fit = BoxFit.cover,
-  }) : super(key: key);
+    this.fit,
+    this.width,
+    this.height,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (imageUrl == null || imageUrl!.isEmpty) {
-      return _buildPlaceholder();
+      return Container(
+        width: width,
+        height: height,
+        color: AppTheme.bgCard,
+        child: const Icon(Icons.image, size: 48, color: AppTheme.textMuted),
+      );
     }
 
-    // Si es Base64
     if (imageUrl!.startsWith('data:image')) {
       try {
         final commaIndex = imageUrl!.indexOf(',');
         final base64String = imageUrl!.substring(commaIndex + 1);
-        final bytes = base64Decode(base64String);
         return Image.memory(
-          bytes,
-          fit: fit,
-          errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
+          base64Decode(base64String),
+          fit: fit ?? BoxFit.cover,
+          width: width,
+          height: height,
         );
       } catch (e) {
-        return _buildPlaceholder();
+        return Container(
+          width: width,
+          height: height,
+          color: AppTheme.bgCard,
+          child: const Icon(Icons.error, color: AppTheme.danger),
+        );
       }
     }
 
     final fullUrl = ApiService.getFullImageUrl(imageUrl!);
 
-    // Si es SVG
+    // Soporte para imágenes SVG (usado en los placeholders de la BD)
     if (fullUrl.toLowerCase().endsWith('.svg')) {
       return SvgPicture.network(
         fullUrl,
-        fit: fit,
-        placeholderBuilder: (BuildContext context) => const Center(
-          child: CircularProgressIndicator(color: AppTheme.primary),
+        fit: fit ?? BoxFit.cover,
+        width: width,
+        height: height,
+        placeholderBuilder: (BuildContext context) => Container(
+          color: AppTheme.bgCard,
+          child: const Center(child: CircularProgressIndicator()),
         ),
       );
     }
 
-    // Imagen normal
+    // Imagen normal (PNG, JPG, WebP)
     return Image.network(
       fullUrl,
-      fit: fit,
-      errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
-    );
-  }
-
-  Widget _buildPlaceholder() {
-    return const Center(
-      child: Icon(Icons.image, size: 48, color: AppTheme.textMuted),
+      fit: fit ?? BoxFit.cover,
+      width: width,
+      height: height,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          width: width,
+          height: height,
+          color: AppTheme.bgCard,
+          child: const Icon(Icons.image, size: 48, color: AppTheme.textMuted),
+        );
+      },
     );
   }
 }

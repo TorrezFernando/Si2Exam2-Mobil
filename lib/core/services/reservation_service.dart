@@ -1,11 +1,10 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
 import 'api_service.dart';
 
 class ReservationService {
   /// Lista las reservas del usuario autenticado
   static Future<List<dynamic>> getMyReservations() async {
-    final response = await ApiService.get('/reservations/');
+    final response = await ApiService.get('/reservations');
     if (response.statusCode == 200) {
       return jsonDecode(utf8.decode(response.bodyBytes)) as List<dynamic>;
     }
@@ -34,7 +33,7 @@ class ReservationService {
       if (notes != null) 'notes': notes,
       if (pickupDate != null) 'pickup_date': pickupDate,
     };
-    final response = await ApiService.post('/reservations/', body);
+    final response = await ApiService.post('/reservations', body);
     if (response.statusCode == 201) {
       return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     }

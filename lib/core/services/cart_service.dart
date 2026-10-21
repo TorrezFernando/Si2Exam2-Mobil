@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'api_service.dart';
 
 class CartItem {
   final dynamic product;
@@ -13,8 +12,8 @@ class CartItem {
   });
 
   double get unitPrice => (variant != null && variant['price_override'] != null)
-      ? variant['price_override']
-      : product['base_price'];
+      ? (variant['price_override'] as num).toDouble()
+      : (product['base_price'] as num).toDouble();
 
   double get totalPrice => unitPrice * quantity;
 }
@@ -65,35 +64,4 @@ class CartService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> submitOrder({required String paymentMethod, String? cardNumber}) async {
-    final orderItems = _items.map((item) {
-      return {
-        'variant_id': item.variant != null ? item.variant['id'] : 0,
-        'quantity': item.quantity,
-        'unit_price': item.unitPrice,
-      };
-    }).toList();
-
-    final orderData = {
-      'items': orderItems,
-      'order_type': paymentMethod == 'reserva' ? 'reserva_pickup' : 'online_delivery',
-      'payment_method': paymentMethod == 'reserva' ? 'efectivo' : paymentMethod,
-      'card_type': paymentMethod == 'tarjeta' ? 'Simulada' : null,
-      'card_last_four': paymentMethod == 'tarjeta' && cardNumber != null && cardNumber.length >= 4 
-          ? cardNumber.substring(cardNumber.length - 4) 
-          : null,
-      'transaction_ref': 'TXN-MOB-${DateTime.now().millisecondsSinceEpoch}',
-    };
-
-    try {
-      final response = await ApiService.post('/orders', orderData);
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        clearCart();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
 }

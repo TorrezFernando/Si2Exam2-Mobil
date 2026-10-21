@@ -3,7 +3,7 @@ import 'api_service.dart';
 
 class OrderService {
   static Future<List<dynamic>> getMyOrders() async {
-    final response = await ApiService.get('/orders/');
+    final response = await ApiService.get('/orders');
     if (response.statusCode == 200) {
       return json.decode(response.body);
     } else {
@@ -26,7 +26,7 @@ class OrderService {
       body['branch_id'] = branchId;
     }
 
-    final response = await ApiService.post('/orders/', body);
+    final response = await ApiService.post('/orders', body);
     if (response.statusCode == 201 || response.statusCode == 200) {
       return json.decode(response.body);
     } else {
