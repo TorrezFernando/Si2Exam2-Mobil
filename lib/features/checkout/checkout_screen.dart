@@ -51,7 +51,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (localBranches.isNotEmpty && mounted) {
           setState(() {
             _branches = localBranches;
-            if (_branchId == null) _branchId = localBranches.first['id'] as int;
+            _branchId ??= localBranches.first['id'] as int;
           });
           return;
         }
@@ -164,7 +164,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
-    // ── MODO ONLINE CON FALLBACK AUTOMATICO ──
+    // ── MODO ONLINE ──
     try {
       if (_reserve) {
         await ReservationService.createReservation(
@@ -182,17 +182,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'request_key': _requestKey
         });
         final data = jsonDecode(utf8.decode(response.bodyBytes));
-        if (response.statusCode != 201) throw Exception(data['detail'] ?? 'No se pudo crear la orden');
+        if (response.statusCode != 201) {
+          // Error explícito del servidor (400, 401, 403, 422). NO convertir a venta offline en efectivo.
+          if (mounted) {
+            setState(() => _error = data['detail'] ?? 'No se pudo crear la orden en el servidor.');
+          }
+          return;
+        }
         cart.clearCart();
         if (!mounted) return;
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => PaymentScreen(orderId: data['id'])));
       }
     } catch (e) {
-      // Si falló por caída de red, guardar en SQLite
-      try {
-        if (_reserve) {
+      // Solo en caso de excepción de transporte de red
+      if (_reserve) {
+        try {
           await syncService.recordOfflineReservation(
             branchId: _branchId ?? 1,
+            tenantId: auth.currentUser?['tenant_id'] ?? 1,
             userId: auth.currentUser?['id'] ?? 1,
             customerName: auth.currentUser?['full_name'] ?? 'Cliente Móvil',
             pickupDate: _pickup?.toUtc().toIso8601String(),
@@ -208,27 +215,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           );
           Navigator.popUntil(context, (route) => route.isFirst);
-        } else {
-          await syncService.recordOfflineSale(
-            branchId: _branchId ?? 1,
-            userId: auth.currentUser?['id'],
-            customerName: auth.currentUser?['full_name'] ?? 'Cliente Móvil',
-            paymentMethod: 'efectivo',
-            totalAmount: cart.totalAmount,
-            items: offlineItems,
-          );
-          cart.clearCart();
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: Colors.amber,
-              content: Text('Fallo de red: Venta respaldada localmente en SQLite.'),
-            ),
-          );
-          Navigator.popUntil(context, (route) => route.isFirst);
+        } catch (inner) {
+          if (mounted) setState(() => _error = 'Error guardando reserva offline: $inner');
         }
-      } catch (inner) {
-        if (mounted) setState(() => _error = 'Error al enviar orden: $e');
+      } else {
+        // En compras e-commerce con tarjeta, PROHIBIDO convertir a venta pagada en efectivo por caída de red
+        if (mounted) {
+          setState(() => _error = 'Error de conexión con la pasarela de pagos. Por favor verifica tu conexión e intenta nuevamente.');
+        }
       }
     } finally {
       if (mounted) setState(() => _busy = false);

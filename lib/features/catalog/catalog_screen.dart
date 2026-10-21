@@ -85,6 +85,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
         _recommendedProducts = recommended;
         _isLoading = false;
       });
+
+      // Primera sesión online prepara caché SQLite de sucursal autorizada (Item 10)
+      final branchId = (auth.currentUser?['branch_id'] as int?) ?? 1;
+      if (syncService.lastSyncTimestamp == null) {
+        syncService.downloadCatalog(branchId);
+      }
     } catch (e) {
       // Fallback a base de datos SQLite local
       try {

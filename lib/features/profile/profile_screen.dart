@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/services/cart_service.dart';
 import '../../core/theme/theme.dart';
 import '../auth/login_screen.dart';
 import '../checkout/my_purchases_screen.dart';
@@ -20,6 +21,7 @@ class ProfileScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.logout, color: AppTheme.danger),
             onPressed: () async {
+              Provider.of<CartService>(context, listen: false).clearCart();
               await auth.logout();
               if (context.mounted) {
                 Navigator.of(context).pushAndRemoveUntil(

@@ -8,6 +8,7 @@ import '../../core/theme/theme.dart';
 import '../../core/widgets/product_image.dart';
 import '../ar_fitting/ai_tryon_screen.dart';
 import '../../core/db/database_helper.dart';
+import '../../core/services/mobile_sync_service.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final int productId;
@@ -109,7 +110,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   int get _totalStock {
-    return _inventory.fold(0, (sum, inv) => sum + (inv['stock'] as int));
+    if (_selectedVariant != null && _selectedVariant['stock'] != null) {
+      return (_selectedVariant['stock'] as num).toInt();
+    }
+    if (_inventory.isNotEmpty) {
+      return _inventory.fold(0, (sum, inv) => sum + (inv['stock'] as int));
+    }
+    return 0;
   }
 
   void _addToCart() {
@@ -130,10 +137,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     Provider.of<CartService>(context, listen: false).addToCart(_product, _selectedVariant, _quantity);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Se ha añadido al carrito'),
+      const SnackBar(
+        content: Text('Se ha añadido al carrito'),
         backgroundColor: AppTheme.success,
-        duration: const Duration(seconds: 1),
+        duration: Duration(seconds: 1),
       ),
     );
     setState(() {
@@ -147,18 +154,31 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecciona una talla/color primero')));
       return;
     }
-    // Diálogo simple para elegir sucursal (branch_id)
+
+    final auth = Provider.of<AuthService>(context, listen: false);
+    final syncService = MobileSyncService.instance;
+    final int branchId = auth.currentUser?['branch_id'] ?? 1;
+    final int tenantId = auth.currentUser?['tenant_id'] ?? 1;
+    final int userId = auth.currentUser?['id'] ?? 1;
+    final variantId = _selectedVariant != null ? _selectedVariant['id'] as int : (_product['variants'][0]['id'] as int);
+    final unitPrice = (_selectedVariant?['price'] ?? _selectedVariant?['price_override'] ?? _product['base_price'] as num).toDouble();
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reservar Producto'),
+        title: const Text('Reservar Prenda'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('¿Reservar "${_product['name']}"?'),
+            Text('¿Reservar $_quantity unidad(es) de "${_product['name']}"?'),
             const SizedBox(height: 8),
-            const Text('Se creará una reserva en la sucursal principal.', style: TextStyle(fontSize: 13, color: Colors.grey)),
+            Text(
+              syncService.isOffline
+                  ? 'Modo Offline: Se reservará localmente en SQLite y se sincronizará al conectar.'
+                  : 'Se confirmará la reserva en la sucursal asignada.',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
           ],
         ),
         actions: [
@@ -169,25 +189,78 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
     if (confirmed != true) return;
 
+    final reservationItems = [{
+      'variant_id': variantId,
+      'quantity': _quantity,
+      'unit_price': unitPrice,
+      'product_name': _product['name'],
+      'variant_label': '${_selectedVariant?['size'] ?? ''} ${_selectedVariant?['color'] ?? ''}'.trim(),
+    }];
+
+    if (syncService.isOffline) {
+      try {
+        await syncService.recordOfflineReservation(
+          branchId: branchId,
+          tenantId: tenantId,
+          userId: userId,
+          customerName: auth.currentUser?['full_name'] ?? 'Cliente Móvil',
+          notes: 'Reserva directa desde app móvil (Offline)',
+          items: reservationItems,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Reserva guardada localmente en SQLite (Offline)'),
+              backgroundColor: Colors.amber,
+            ),
+          );
+          setState(() => _quantity = 1);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al reservar: $e'), backgroundColor: AppTheme.danger),
+          );
+        }
+      }
+      return;
+    }
+
     try {
       await ReservationService.createReservation(
-        branchId: 1, // Default branch; mejorar con selector en el futuro
-        items: [{
-          'variant_id': _selectedVariant != null ? _selectedVariant['id'] : _product['variants'][0]['id'],
-          'quantity': _quantity,
-          'unit_price': (_selectedVariant?['price_override'] ?? _product['base_price']),
-        }],
+        branchId: branchId,
+        items: reservationItems,
         notes: 'Reserva desde app móvil',
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Reserva creada exitosamente'), backgroundColor: AppTheme.success),
+          const SnackBar(content: Text('✅ Reserva creada exitosamente en el servidor'), backgroundColor: AppTheme.success),
         );
-        setState(() {
-          _quantity = 1;
-        });
+        setState(() => _quantity = 1);
       }
     } catch (e) {
+      // Fallback a SQLite si falló el transporte de red
+      try {
+        await syncService.recordOfflineReservation(
+          branchId: branchId,
+          tenantId: tenantId,
+          userId: userId,
+          customerName: auth.currentUser?['full_name'] ?? 'Cliente Móvil',
+          notes: 'Reserva guardada tras fallo de conexión',
+          items: reservationItems,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sin conexión al servidor: Reserva guardada localmente en SQLite'),
+              backgroundColor: Colors.amber,
+            ),
+          );
+          setState(() => _quantity = 1);
+          return;
+        }
+      } catch (_) {}
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger),
@@ -202,7 +275,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (_product == null) return const Scaffold(body: Center(child: Text('Producto no encontrado')));
 
     final imageUrl = _selectedVariant?['image_url'] ?? _product['image_url'];
-    final price = _selectedVariant?['price_override'] ?? _product['base_price'];
+    final price = _selectedVariant?['price'] ?? _selectedVariant?['price_override'] ?? _product['base_price'];
 
     return Scaffold(
       appBar: AppBar(title: Text(_product['name'])),

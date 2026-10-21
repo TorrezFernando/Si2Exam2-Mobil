@@ -20,8 +20,9 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
     );
   }
@@ -29,6 +30,30 @@ class DatabaseHelper {
   Future<void> _onConfigure(Database db) async {
     // Activar integridad referencial y claves foráneas en SQLite
     await db.execute('PRAGMA foreign_keys = ON');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      try {
+        await db.execute('ALTER TABLE sync_operations ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE sync_operations ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1;');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE sync_operations ADD COLUMN branch_id INTEGER NOT NULL DEFAULT 1;');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE sync_operations ADD COLUMN next_retry_at TEXT;');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE sync_operations ADD COLUMN last_attempt_at TEXT;');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_sync_ops_status ON sync_operations (tenant_id, user_id, status);');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_sync_ops_branch ON sync_operations (tenant_id, branch_id);');
+      } catch (_) {}
+    }
   }
 
   Future<void> _createDB(Database db, int version) async {
@@ -161,15 +186,23 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE sync_operations (
         client_operation_uuid TEXT PRIMARY KEY,
+        tenant_id INTEGER NOT NULL DEFAULT 1,
+        user_id INTEGER NOT NULL DEFAULT 1,
+        branch_id INTEGER NOT NULL DEFAULT 1,
         operation_type TEXT NOT NULL,
         payload TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'PENDIENTE',
         attempts INTEGER NOT NULL DEFAULT 0,
+        next_retry_at TEXT,
+        last_attempt_at TEXT,
         error_message TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
     ''');
+
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_sync_ops_status ON sync_operations (tenant_id, user_id, status);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_sync_ops_branch ON sync_operations (tenant_id, branch_id);');
   }
 
   Future<void> close() async {

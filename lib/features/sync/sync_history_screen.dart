@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/auth_service.dart';
 import '../../core/services/mobile_sync_service.dart';
 import '../../core/theme/theme.dart';
 
@@ -23,7 +24,11 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
   Future<void> _loadHistory() async {
     setState(() => _loading = true);
     final service = MobileSyncService.instance;
-    final list = await service.getSyncHistory();
+    final auth = Provider.of<AuthService>(context, listen: false);
+    final list = await service.getSyncHistory(
+      tenantId: auth.currentUser?['tenant_id'],
+      userId: auth.currentUser?['id'],
+    );
     if (mounted) {
       setState(() {
         _history = list;
@@ -163,12 +168,14 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                       onPressed: syncService.isOffline
                           ? null
                           : () async {
-                              final ok = await syncService.downloadCatalog(1);
+                              final auth = Provider.of<AuthService>(context, listen: false);
+                              final branchId = (auth.currentUser?['branch_id'] as int?) ?? 1;
+                              final ok = await syncService.downloadCatalog(branchId);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(ok
-                                        ? 'Catálogo descargado y guardado en SQLite'
+                                        ? 'Catálogo de sucursal $branchId guardado en SQLite'
                                         : 'Error al descargar catálogo'),
                                   ),
                                 );
