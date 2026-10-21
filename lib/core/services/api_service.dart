@@ -29,13 +29,13 @@ class ApiService {
     };
   }
 
-  static Future<http.Response> get(String endpoint) async {
-    final headers = await _getHeaders();
+  static Future<http.Response> get(String endpoint, {String? sessionToken}) async {
+    final headers = sessionToken == null ? await _getHeaders() : {'Content-Type': 'application/json', 'Authorization': 'Bearer $sessionToken'};
     return http.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(const Duration(seconds: 30));
   }
 
-  static Future<http.Response> post(String endpoint, Map<String, dynamic> body) async {
-    final headers = await _getHeaders();
+  static Future<http.Response> post(String endpoint, Map<String, dynamic> body, {String? sessionToken}) async {
+    final headers = sessionToken == null ? await _getHeaders() : {'Content-Type': 'application/json', 'Authorization': 'Bearer $sessionToken'};
     return http.post(
       Uri.parse('$baseUrl$endpoint'),
       headers: headers,

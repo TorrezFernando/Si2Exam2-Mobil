@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/services/catalog_service.dart';
 import '../../core/services/cart_service.dart';
-import '../../core/services/reservation_service.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/product_image.dart';
@@ -149,123 +148,28 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _reserveProduct() async {
-    if (_product == null) return;
-    if (_product['variants'] != null && _product['variants'].isNotEmpty && _selectedVariant == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecciona una talla/color primero')));
-      return;
-    }
-
-    final auth = Provider.of<AuthService>(context, listen: false);
-    final syncService = MobileSyncService.instance;
-    final int branchId = auth.currentUser?['branch_id'] ?? 1;
-    final int tenantId = auth.currentUser?['tenant_id'] ?? 1;
-    final int userId = auth.currentUser?['id'] ?? 1;
-    final variantId = _selectedVariant != null ? _selectedVariant['id'] as int : (_product['variants'][0]['id'] as int);
-    final unitPrice = (_selectedVariant?['price'] ?? _selectedVariant?['price_override'] ?? _product['base_price'] as num).toDouble();
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reservar Prenda'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('¿Reservar $_quantity unidad(es) de "${_product['name']}"?'),
-            const SizedBox(height: 8),
-            Text(
-              syncService.isOffline
-                  ? 'Modo Offline: Se reservará localmente en SQLite y se sincronizará al conectar.'
-                  : 'Se confirmará la reserva en la sucursal asignada.',
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Confirmar')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    final reservationItems = [{
-      'variant_id': variantId,
-      'quantity': _quantity,
-      'unit_price': unitPrice,
-      'product_name': _product['name'],
-      'variant_label': '${_selectedVariant?['size'] ?? ''} ${_selectedVariant?['color'] ?? ''}'.trim(),
-    }];
-
-    if (syncService.isOffline) {
-      try {
-        await syncService.recordOfflineReservation(
-          branchId: branchId,
-          tenantId: tenantId,
-          userId: userId,
-          customerName: auth.currentUser?['full_name'] ?? 'Cliente Móvil',
-          notes: 'Reserva directa desde app móvil (Offline)',
-          items: reservationItems,
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Reserva guardada localmente en SQLite (Offline)'),
-              backgroundColor: Colors.amber,
-            ),
-          );
-          setState(() => _quantity = 1);
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al reservar: $e'), backgroundColor: AppTheme.danger),
-          );
-        }
-      }
-      return;
-    }
-
+    final sync = MobileSyncService.instance;
     try {
-      await ReservationService.createReservation(
-        branchId: branchId,
-        items: reservationItems,
-        notes: 'Reserva desde app móvil',
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Reserva creada exitosamente en el servidor'), backgroundColor: AppTheme.success),
-        );
-        setState(() => _quantity = 1);
+      final branch = await sync.cachedBranch() ?? sync.assignedBranch;
+      if (branch == null) throw Exception('Selecciona y descarga una sucursal desde Sincronización.');
+      if (_selectedVariant == null) throw Exception('Selecciona talla y color.');
+      if (await sync.cachedBranch() != branch && !await sync.downloadCatalog(branch)) {
+        throw Exception(sync.message ?? 'Descarga primero el catálogo.');
       }
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Reservar prenda'), content: Text('Reservar $_quantity unidad(es) en sucursal $branch.'),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar reserva'))]));
+      if (confirmed != true) return;
+      await sync.recordOfflineReservation(branchId: branch, tenantId: sync.tenantId, userId: sync.ownerId!, items: [{
+        'variant_id': _selectedVariant['id'], 'quantity': _quantity,
+        'unit_price': _selectedVariant['price'] ?? _selectedVariant['price_override'] ?? _product['base_price'],
+        'product_name': _product['name'], 'variant_label': '${_selectedVariant['size']} ${_selectedVariant['color']}',
+      }]);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reserva guardada. Consulta su confirmación en Sincronización.')));
     } catch (e) {
-      // Fallback a SQLite si falló el transporte de red
-      try {
-        await syncService.recordOfflineReservation(
-          branchId: branchId,
-          tenantId: tenantId,
-          userId: userId,
-          customerName: auth.currentUser?['full_name'] ?? 'Cliente Móvil',
-          notes: 'Reserva guardada tras fallo de conexión',
-          items: reservationItems,
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Sin conexión al servidor: Reserva guardada localmente en SQLite'),
-              backgroundColor: Colors.amber,
-            ),
-          );
-          setState(() => _quantity = 1);
-          return;
-        }
-      } catch (_) {}
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 

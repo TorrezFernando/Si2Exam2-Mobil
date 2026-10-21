@@ -1,6 +1,7 @@
+import 'dart:convert';
+import '../../core/services/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/services/auth_service.dart';
 import '../../core/services/mobile_sync_service.dart';
 import '../../core/theme/theme.dart';
 
@@ -19,21 +20,40 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
   void initState() {
     super.initState();
     _loadHistory();
+    MobileSyncService.instance.addListener(_onSyncChanged);
   }
 
+  void _onSyncChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _loadHistory(); });
+  }
+  @override
+  void dispose() { MobileSyncService.instance.removeListener(_onSyncChanged); super.dispose(); }
   Future<void> _loadHistory() async {
-    setState(() => _loading = true);
-    final service = MobileSyncService.instance;
-    final auth = Provider.of<AuthService>(context, listen: false);
-    final list = await service.getSyncHistory(
-      tenantId: auth.currentUser?['tenant_id'],
-      userId: auth.currentUser?['id'],
-    );
-    if (mounted) {
-      setState(() {
-        _history = list;
-        _loading = false;
-      });
+    if (!mounted) return;
+    try {
+      final list = await MobileSyncService.instance.getSyncHistory();
+      if (mounted) setState(() { _history = list; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+  Future<void> _download() async {
+    final sync = MobileSyncService.instance;
+    try {
+      final response = await ApiService.get('/branches');
+      if (response.statusCode != 200) throw Exception('No se pudieron consultar las sucursales.');
+      final branches = jsonDecode(response.body) as List;
+      final permitted = branches.where((b) => b['tenant_id'] == sync.tenantId &&
+        (sync.permissions.contains('branches:write') || !sync.canSell || b['id'] == sync.assignedBranch)).toList();
+      if (!mounted) return;
+      final branchId = await showDialog<int>(context: context, builder: (ctx) => SimpleDialog(
+        title: const Text('Sucursal del catálogo'),
+        children: permitted.map((b) => SimpleDialogOption(onPressed: () => Navigator.pop(ctx, b['id'] as int), child: Text(b['name']))).toList()));
+      if (branchId == null) return;
+      final ok = await sync.downloadCatalog(branchId);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok ? 'Catálogo actualizado.' : sync.message ?? 'No se pudo actualizar.')));
+    } catch(e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -64,6 +84,8 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (syncService.legacyData) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Existen datos anteriores sin propietario verificable. Se conservaron intactos y requieren conciliación administrativa antes de importarlos.')),
+                if (syncService.message != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(syncService.message!)),
                 // 1. Estado de Conexión
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -133,7 +155,7 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                         onPressed: syncService.isSyncing || syncService.isOffline || pending == 0
                             ? null
                             : () async {
-                                final res = await syncService.syncBatch();
+                                final res = await syncService.syncBatch(manual: true);
                                 if (context.mounted && res != null) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
@@ -165,22 +187,7 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                         side: const BorderSide(color: AppTheme.textMuted),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      onPressed: syncService.isOffline
-                          ? null
-                          : () async {
-                              final auth = Provider.of<AuthService>(context, listen: false);
-                              final branchId = (auth.currentUser?['branch_id'] as int?) ?? 1;
-                              final ok = await syncService.downloadCatalog(branchId);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(ok
-                                        ? 'Catálogo de sucursal $branchId guardado en SQLite'
-                                        : 'Error al descargar catálogo'),
-                                  ),
-                                );
-                              }
-                            },
+                      onPressed: syncService.isOffline || syncService.isSyncing ? null : _download,
                       icon: const Icon(Icons.download, size: 18),
                       label: const Text('Catálogo'),
                     ),

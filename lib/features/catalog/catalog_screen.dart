@@ -87,8 +87,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
       });
 
       // Primera sesión online prepara caché SQLite de sucursal autorizada (Item 10)
-      final branchId = (auth.currentUser?['branch_id'] as int?) ?? 1;
-      if (syncService.lastSyncTimestamp == null) {
+      final branchId = await syncService.cachedBranch() ?? auth.currentUser?['branch_id'] as int?;
+      if (branchId != null && (syncService.lastSyncTimestamp == null || DateTime.now().difference(DateTime.parse(syncService.lastSyncTimestamp!)).inMinutes >= 15)) {
         syncService.downloadCatalog(branchId);
       }
     } catch (e) {

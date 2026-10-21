@@ -28,6 +28,10 @@ class CartItem {
 
 class CartService extends ChangeNotifier {
   final List<CartItem> _items = [];
+  String? _account;
+  void bindAccount(String? account) {
+    if (_account != account) { _account = account; _items.clear(); }
+  }
 
   List<CartItem> get items => _items;
 

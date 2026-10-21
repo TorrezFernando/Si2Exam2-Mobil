@@ -13,7 +13,10 @@ void main() {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
-        ChangeNotifierProvider(create: (_) => CartService()),
+        ChangeNotifierProxyProvider<AuthService, CartService>(
+          create: (_) => CartService(),
+          update: (_, auth, cart) => (cart ?? CartService())..bindAccount(auth.token),
+        ),
         ChangeNotifierProvider.value(value: MobileSyncService.instance),
       ],
       child: const FashionStoreApp(),

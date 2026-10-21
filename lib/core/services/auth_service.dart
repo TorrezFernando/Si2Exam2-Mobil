@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+import 'mobile_sync_service.dart';
 
 class AuthRejectedException implements Exception {
   final String message;
@@ -20,24 +21,29 @@ class AuthService extends ChangeNotifier {
   
   String? get token => _token;
   String? _token;
+  int _generation = 0;
 
   AuthService() {
     _checkLoginStatus();
   }
 
   Future<void> _checkLoginStatus() async {
+    final generation = _generation;
     final prefs = await SharedPreferences.getInstance();
+    if (generation != _generation) return;
     final token = prefs.getString('auth_token');
     final cachedProfileStr = prefs.getString('cached_user_profile');
 
     if (token != null) {
       _token = token;
-      _isLoggedIn = true;
+      _isLoggedIn = false;
       if (cachedProfileStr != null) {
         try {
           _user = jsonDecode(cachedProfileStr);
         } catch (_) {}
       }
+      _isLoggedIn = _user != null;
+      MobileSyncService.instance.setSession(_user, _token);
       notifyListeners();
 
       // Intentar refrescar perfil en segundo plano sin destruir la sesión offline si no hay red
@@ -55,19 +61,24 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<bool> login(String email, String password) async {
+    final generation = ++_generation;
     try {
       final response = await ApiService.postForm('/auth/login', {
         'username': email,
         'password': password,
       });
 
+      if (generation != _generation) return false;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('cached_user_profile');
+        if (generation != _generation) return false;
         await prefs.setString('auth_token', data['access_token']);
         _token = data['access_token'];
-        _isLoggedIn = true;
-        
+        _isLoggedIn = false;
+        _user = null;
+        MobileSyncService.instance.setSession(null, null);
         await fetchUser();
         return true;
       }
@@ -96,11 +107,18 @@ class AuthService extends ChangeNotifier {
 
   Future<void> fetchUser() async {
     try {
-      final response = await ApiService.get('/auth/me');
+      final token = _token;
+      final generation = _generation;
+      if (token == null) return;
+      final response = await ApiService.get('/auth/me', sessionToken: token);
+      if (generation != _generation || token != _token) return;
       if (response.statusCode == 200) {
         _user = jsonDecode(response.body);
+        _user!['_offline_valid_until'] = DateTime.now().toUtc().add(const Duration(hours: 24)).toIso8601String();
+        _isLoggedIn = true;
+        MobileSyncService.instance.setSession(_user, _token);
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('cached_user_profile', response.body);
+        await prefs.setString('cached_user_profile', jsonEncode(_user));
         notifyListeners();
       } else if (response.statusCode == 401 || response.statusCode == 403) {
         throw AuthRejectedException('Sesión rechazada por el servidor: HTTP ${response.statusCode}');
@@ -115,6 +133,12 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    _generation++;
+    MobileSyncService.instance.setSession(null, null);
+    _token = null;
+    _isLoggedIn = false;
+    _user = null;
+    notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
     await prefs.remove('cached_user_profile');

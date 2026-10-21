@@ -7,7 +7,6 @@ import '../../core/services/api_service.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/cart_service.dart';
 import '../../core/services/mobile_sync_service.dart';
-import '../../core/services/reservation_service.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -78,6 +77,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final auth = context.read<AuthService>();
 
     if (cart.items.isEmpty) return;
+    if (syncService.isOffline && !_reserve && !syncService.canSell) {
+      setState(() => _error = 'La compra con tarjeta necesita conexión. La caja offline es solo para personal autorizado.');
+      return;
+    }
+    if (_branchId == null && (_reserve || syncService.isOffline)) {
+      setState(() => _error = 'Selecciona una sucursal con catálogo descargado.');
+      return;
+    }
+    bool cashConfirmed = false;
+    if (syncService.isOffline && !_reserve) {
+      cashConfirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar cobro en efectivo'),
+        content: Text('¿Recibiste Bs ${cart.totalAmount.toStringAsFixed(2)} del cliente?'),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Efectivo recibido'))],
+      )) ?? false;
+      if (!cashConfirmed || !mounted) return;
+    }
     if (_reserve && (_branchId == null || _pickup == null || !_pickup!.isAfter(DateTime.now()))) {
       setState(() => _error = 'Selecciona una sucursal y un horario futuro.');
       return;
@@ -104,8 +121,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       try {
         if (_reserve) {
           await syncService.recordOfflineReservation(
-            branchId: _branchId ?? 1,
-            userId: auth.currentUser?['id'] ?? 1,
+            branchId: _branchId!,
+            tenantId: auth.currentUser?['tenant_id'],
+            userId: auth.currentUser!['id'],
             customerName: auth.currentUser?['full_name'] ?? 'Cliente Móvil',
             pickupDate: _pickup?.toUtc().toIso8601String(),
             notes: 'Reserva guardada offline en SQLite',
@@ -122,10 +140,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           Navigator.popUntil(context, (route) => route.isFirst);
         } else {
           await syncService.recordOfflineSale(
-            branchId: _branchId ?? 1,
+            branchId: _branchId!,
+            tenantId: auth.currentUser?['tenant_id'],
             userId: auth.currentUser?['id'],
             customerName: auth.currentUser?['full_name'] ?? 'Cliente Móvil',
             paymentMethod: 'efectivo',
+            cashConfirmed: cashConfirmed,
             totalAmount: cart.totalAmount,
             items: offlineItems,
           );
@@ -167,12 +187,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // ── MODO ONLINE ──
     try {
       if (_reserve) {
-        await ReservationService.createReservation(
-            branchId: _branchId!, items: items, pickupDate: _pickup!.toUtc().toIso8601String());
+        if (await syncService.cachedBranch() != _branchId) {
+          if (!await syncService.downloadCatalog(_branchId!)) throw Exception(syncService.message ?? 'Descarga el catálogo de la sucursal.');
+        }
+        await syncService.recordOfflineReservation(branchId: _branchId!, tenantId: auth.currentUser?['tenant_id'],
+          userId: auth.currentUser!['id'], items: offlineItems, pickupDate: _pickup!.toUtc().toIso8601String());
         cart.clearCart();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Reserva registrada en el servidor con éxito.')));
+            const SnackBar(content: Text('Reserva guardada; revisa su confirmación en Sincronización.')));
         Navigator.popUntil(context, (route) => route.isFirst);
       } else {
         final response = await ApiService.post('/orders', {
@@ -194,36 +217,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => PaymentScreen(orderId: data['id'])));
       }
     } catch (e) {
-      // Solo en caso de excepción de transporte de red
-      if (_reserve) {
-        try {
-          await syncService.recordOfflineReservation(
-            branchId: _branchId ?? 1,
-            tenantId: auth.currentUser?['tenant_id'] ?? 1,
-            userId: auth.currentUser?['id'] ?? 1,
-            customerName: auth.currentUser?['full_name'] ?? 'Cliente Móvil',
-            pickupDate: _pickup?.toUtc().toIso8601String(),
-            notes: 'Reserva guardada tras fallo de conexión',
-            items: offlineItems,
-          );
-          cart.clearCart();
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: Colors.amber,
-              content: Text('Fallo de red: Reserva respaldada en SQLite local.'),
-            ),
-          );
-          Navigator.popUntil(context, (route) => route.isFirst);
-        } catch (inner) {
-          if (mounted) setState(() => _error = 'Error guardando reserva offline: $inner');
-        }
-      } else {
-        // En compras e-commerce con tarjeta, PROHIBIDO convertir a venta pagada en efectivo por caída de red
-        if (mounted) {
-          setState(() => _error = 'Error de conexión con la pasarela de pagos. Por favor verifica tu conexión e intenta nuevamente.');
-        }
-      }
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
     }
