@@ -3,15 +3,18 @@ import 'package:provider/provider.dart';
 import 'core/theme/theme.dart';
 import 'core/services/auth_service.dart';
 import 'core/services/cart_service.dart';
+import 'core/services/mobile_sync_service.dart';
 import 'features/auth/login_screen.dart';
 import 'core/navigation/main_layout.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
         ChangeNotifierProvider(create: (_) => CartService()),
+        ChangeNotifierProvider.value(value: MobileSyncService.instance),
       ],
       child: const FashionStoreApp(),
     ),

@@ -7,6 +7,7 @@ import '../../core/services/auth_service.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/product_image.dart';
 import '../ar_fitting/ai_tryon_screen.dart';
+import '../../core/db/database_helper.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final int productId;
@@ -47,17 +48,37 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ? product['variants'][0]
           : null;
       
-      setState(() {
-        _product = product;
-        _selectedVariant = variant;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _product = product;
+          _selectedVariant = variant;
+          _isLoading = false;
+        });
+      }
 
       if (variant != null) {
         _loadInventory(variant['id']);
       }
     } catch (e) {
-      setState(() => _isLoading = false);
+      // Fallback a SQLite local si no hay conexión
+      try {
+        final db = await DatabaseHelper.instance.database;
+        final prods = await db.query('products', where: 'id = ?', whereArgs: [widget.productId]);
+        if (prods.isNotEmpty && mounted) {
+          final vars = await db.query('variants', where: 'product_id = ?', whereArgs: [widget.productId]);
+          final prod = Map<String, dynamic>.from(prods.first);
+          prod['variants'] = vars;
+          dynamic variant = vars.isNotEmpty ? vars.first : null;
+          setState(() {
+            _product = prod;
+            _selectedVariant = variant;
+            _isLoading = false;
+          });
+          return;
+        }
+      } catch (_) {}
+
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

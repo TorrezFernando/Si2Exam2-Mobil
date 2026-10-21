@@ -9,6 +9,7 @@ import '../cart/cart_screen.dart';
 import '../reservations/reservation_screen.dart';
 import 'product_detail_screen.dart';
 import '../chat/chat_screen.dart';
+import '../../core/services/mobile_sync_service.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -53,6 +54,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
 
   Future<void> _fetchProducts() async {
+    final syncService = MobileSyncService.instance;
+    if (syncService.isOffline) {
+      final localProds = await syncService.getLocalProducts();
+      if (!mounted) return;
+      setState(() {
+        _products = localProds;
+        _filteredProducts = localProds;
+        _recommendedProducts = [];
+        _isLoading = false;
+      });
+      return;
+    }
+
     try {
       final auth = Provider.of<AuthService>(context, listen: false);
       final products = await CatalogService.getProducts();
@@ -72,6 +86,26 @@ class _CatalogScreenState extends State<CatalogScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      // Fallback a base de datos SQLite local
+      try {
+        final localProds = await syncService.getLocalProducts();
+        if (localProds.isNotEmpty && mounted) {
+          setState(() {
+            _products = localProds;
+            _filteredProducts = localProds;
+            _recommendedProducts = [];
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Colors.amber,
+              content: Text('Sin conexión al servidor: Mostrando catálogo guardado en SQLite local'),
+            ),
+          );
+          return;
+        }
+      } catch (_) {}
+
       if (!mounted) return;
       setState(() => _isLoading = false);
       if (mounted) {
