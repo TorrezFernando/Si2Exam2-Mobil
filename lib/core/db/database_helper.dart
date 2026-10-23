@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -9,21 +10,31 @@ class DatabaseHelper {
   final DatabaseFactory? _factory;
   final String? _root;
   DatabaseHelper._init() : _factory = null, _root = null;
-  DatabaseHelper.forTesting(DatabaseFactory factory, String root) : _factory = factory, _root = root;
+  DatabaseHelper.forTesting(DatabaseFactory factory, String root)
+    : _factory = factory,
+      _root = root;
   Future<String> get directory async => _root ?? await getDatabasesPath();
 
   void setScope(int? tenant, int? owner) {
-    _scope = tenant != null && owner != null && tenant > 0 && owner > 0 ? '${tenant}_$owner' : null;
+    _scope = tenant != null && owner != null && tenant > 0 && owner > 0
+        ? '${tenant}_$owner'
+        : null;
   }
 
   Future<Database> get database {
     final scope = _scope;
-    if (scope == null) throw StateError('Se requiere una sesión con empresa y usuario.');
+    if (scope == null)
+      throw StateError('Se requiere una sesión con empresa y usuario.');
     return _databases.putIfAbsent(scope, () async {
       try {
-        return await (_factory ?? databaseFactory).openDatabase(join(await directory, 'fashionstore_account_$scope.db'),
-          options: OpenDatabaseOptions(version: 3, onCreate: _createDB,
-          onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON')));
+        return await (_factory ?? databaseFactory).openDatabase(
+          join(await directory, 'fashionstore_account_$scope.db'),
+          options: OpenDatabaseOptions(
+            version: 3,
+            onCreate: _createDB,
+            onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
+          ),
+        );
       } catch (_) {
         _databases.remove(scope);
         rethrow;
@@ -33,10 +44,13 @@ class DatabaseHelper {
 
   // Legacy v1/v2 contains no reliable operator identity. Keep it byte-for-byte
   // intact, outside active account databases. Never assign its rows to user 1.
-  Future<bool> hasLegacyData() async => (_factory ?? databaseFactory).databaseExists(join(await directory, 'fashionstore_mobile.db'));
+  Future<bool> hasLegacyData() async => (_factory ?? databaseFactory)
+      .databaseExists(join(await directory, 'fashionstore_mobile.db'));
 
   Future<void> _createDB(Database db, int version) async {
-    await db.execute('CREATE TABLE cache_metadata (id INTEGER PRIMARY KEY CHECK(id=1), branch_id INTEGER NOT NULL, server_timestamp TEXT NOT NULL)');
+    await db.execute(
+      'CREATE TABLE cache_metadata (id INTEGER PRIMARY KEY CHECK(id=1), branch_id INTEGER NOT NULL, server_timestamp TEXT NOT NULL)',
+    );
     // 1. Sucursales
     await db.execute('''
       CREATE TABLE branches (
@@ -185,12 +199,18 @@ class DatabaseHelper {
       )
     ''');
 
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_sync_ops_status ON sync_operations (tenant_id, user_id, status);');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_sync_ops_branch ON sync_operations (tenant_id, branch_id);');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_sync_ops_status ON sync_operations (tenant_id, user_id, status);',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_sync_ops_branch ON sync_operations (tenant_id, branch_id);',
+    );
   }
 
   Future<void> close() async {
-    for (final future in _databases.values) { await (await future).close(); }
+    for (final future in _databases.values) {
+      await (await future).close();
+    }
     _databases.clear();
   }
 }

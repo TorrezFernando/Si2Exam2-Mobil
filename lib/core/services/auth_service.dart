@@ -1,12 +1,16 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'api_service.dart';
 import 'mobile_sync_service.dart';
 
 class AuthRejectedException implements Exception {
   final String message;
-  AuthRejectedException([this.message = 'Credenciales no autorizadas o sesión expirada']);
+  AuthRejectedException([
+    this.message = 'Credenciales no autorizadas o sesión expirada',
+  ]);
   @override
   String toString() => message;
 }
@@ -14,11 +18,11 @@ class AuthRejectedException implements Exception {
 class AuthService extends ChangeNotifier {
   bool _isLoggedIn = false;
   bool get isLoggedIn => _isLoggedIn;
-  
+
   Map<String, dynamic>? _user;
   Map<String, dynamic>? get user => _user;
   Map<String, dynamic>? get currentUser => _user;
-  
+
   String? get token => _token;
   String? _token;
   int _generation = 0;
@@ -54,7 +58,9 @@ class AuthService extends ChangeNotifier {
         await logout();
       } catch (e) {
         // Error de red / timeout: Mantener sesión offline con datos cacheados
-        debugPrint('[AUTH] Sin conexión al reanudar sesión. Operando con perfil en caché local.');
+        debugPrint(
+          '[AUTH] Sin conexión al reanudar sesión. Operando con perfil en caché local.',
+        );
       }
     }
     notifyListeners();
@@ -88,7 +94,12 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<bool> register(String firstName, String lastName, String email, String password) async {
+  Future<bool> register(
+    String firstName,
+    String lastName,
+    String email,
+    String password,
+  ) async {
     try {
       final response = await ApiService.post('/auth/register', {
         'full_name': '$firstName $lastName'.trim(),
@@ -114,14 +125,19 @@ class AuthService extends ChangeNotifier {
       if (generation != _generation || token != _token) return;
       if (response.statusCode == 200) {
         _user = jsonDecode(response.body);
-        _user!['_offline_valid_until'] = DateTime.now().toUtc().add(const Duration(hours: 24)).toIso8601String();
+        _user!['_offline_valid_until'] = DateTime.now()
+            .toUtc()
+            .add(const Duration(hours: 24))
+            .toIso8601String();
         _isLoggedIn = true;
         MobileSyncService.instance.setSession(_user, _token);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('cached_user_profile', jsonEncode(_user));
         notifyListeners();
       } else if (response.statusCode == 401 || response.statusCode == 403) {
-        throw AuthRejectedException('Sesión rechazada por el servidor: HTTP ${response.statusCode}');
+        throw AuthRejectedException(
+          'Sesión rechazada por el servidor: HTTP ${response.statusCode}',
+        );
       } else {
         throw Exception('HTTP ${response.statusCode} al obtener usuario');
       }

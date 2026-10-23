@@ -1,7 +1,10 @@
 import 'dart:convert';
+
 import '../../core/services/api_service.dart';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/services/mobile_sync_service.dart';
 import '../../core/theme/theme.dart';
 
@@ -24,36 +27,78 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
   }
 
   void _onSyncChanged() {
-    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _loadHistory(); });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadHistory();
+    });
   }
+
   @override
-  void dispose() { MobileSyncService.instance.removeListener(_onSyncChanged); super.dispose(); }
+  void dispose() {
+    MobileSyncService.instance.removeListener(_onSyncChanged);
+    super.dispose();
+  }
+
   Future<void> _loadHistory() async {
     if (!mounted) return;
     try {
       final list = await MobileSyncService.instance.getSyncHistory();
-      if (mounted) setState(() { _history = list; _loading = false; });
+      if (mounted)
+        setState(() {
+          _history = list;
+          _loading = false;
+        });
     } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
   }
+
   Future<void> _download() async {
     final sync = MobileSyncService.instance;
     try {
       final response = await ApiService.get('/branches');
-      if (response.statusCode != 200) throw Exception('No se pudieron consultar las sucursales.');
+      if (response.statusCode != 200)
+        throw Exception('No se pudieron consultar las sucursales.');
       final branches = jsonDecode(response.body) as List;
-      final permitted = branches.where((b) => b['tenant_id'] == sync.tenantId &&
-        (sync.permissions.contains('branches:write') || !sync.canSell || b['id'] == sync.assignedBranch)).toList();
+      final permitted = branches
+          .where(
+            (b) =>
+                b['tenant_id'] == sync.tenantId &&
+                (sync.permissions.contains('branches:write') ||
+                    !sync.canSell ||
+                    b['id'] == sync.assignedBranch),
+          )
+          .toList();
       if (!mounted) return;
-      final branchId = await showDialog<int>(context: context, builder: (ctx) => SimpleDialog(
-        title: const Text('Sucursal del catálogo'),
-        children: permitted.map((b) => SimpleDialogOption(onPressed: () => Navigator.pop(ctx, b['id'] as int), child: Text(b['name']))).toList()));
+      final branchId = await showDialog<int>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('Sucursal del catálogo'),
+          children: permitted
+              .map(
+                (b) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(ctx, b['id'] as int),
+                  child: Text(b['name']),
+                ),
+              )
+              .toList(),
+        ),
+      );
       if (branchId == null) return;
       final ok = await sync.downloadCatalog(branchId);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok ? 'Catálogo actualizado.' : sync.message ?? 'No se pudo actualizar.')));
-    } catch(e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              ok
+                  ? 'Catálogo actualizado.'
+                  : sync.message ?? 'No se pudo actualizar.',
+            ),
+          ),
+        );
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -61,8 +106,12 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
   Widget build(BuildContext context) {
     return Consumer<MobileSyncService>(
       builder: (context, syncService, _) {
-        final confirmed = _history.where((i) => i['status'] == 'CONFIRMADA').length;
-        final conflicts = _history.where((i) => i['status'] == 'RECHAZADA_CONFLICTO').length;
+        final confirmed = _history
+            .where((i) => i['status'] == 'CONFIRMADA')
+            .length;
+        final conflicts = _history
+            .where((i) => i['status'] == 'RECHAZADA_CONFLICTO')
+            .length;
         final pending = syncService.pendingCount;
 
         return Scaffold(
@@ -84,11 +133,24 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (syncService.legacyData) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Existen datos anteriores sin propietario verificable. Se conservaron intactos y requieren conciliación administrativa antes de importarlos.')),
-                if (syncService.message != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(syncService.message!)),
+                if (syncService.legacyData)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'Existen datos anteriores sin propietario verificable. Se conservaron intactos y requieren conciliación administrativa antes de importarlos.',
+                    ),
+                  ),
+                if (syncService.message != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(syncService.message!),
+                  ),
                 // 1. Estado de Conexión
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: syncService.isOnline
                         ? const Color(0xFF10B981).withOpacity(0.12)
@@ -102,7 +164,9 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                     children: [
                       Icon(
                         syncService.isOnline ? Icons.wifi : Icons.wifi_off,
-                        color: syncService.isOnline ? Colors.green : Colors.amber,
+                        color: syncService.isOnline
+                            ? Colors.green
+                            : Colors.amber,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -110,17 +174,24 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              syncService.isOnline ? 'En Línea (Conectado)' : 'Modo Sin Conexión (SQLite)',
+                              syncService.isOnline
+                                  ? 'En Línea (Conectado)'
+                                  : 'Modo Sin Conexión (SQLite)',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: syncService.isOnline ? Colors.green : Colors.amber,
+                                color: syncService.isOnline
+                                    ? Colors.green
+                                    : Colors.amber,
                               ),
                             ),
                             Text(
                               syncService.isOnline
                                   ? 'Las ventas locales se sincronizan automáticamente con el servidor.'
                                   : 'Operando localmente. Las operaciones se enviarán al reconectar.',
-                              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textSecondary,
+                              ),
                             ),
                           ],
                         ),
@@ -133,11 +204,26 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                 // 2. Tarjetas de Métricas
                 Row(
                   children: [
-                    _buildStatCard('Pendientes', '$pending', Colors.amber, Icons.hourglass_top),
+                    _buildStatCard(
+                      'Pendientes',
+                      '$pending',
+                      Colors.amber,
+                      Icons.hourglass_top,
+                    ),
                     const SizedBox(width: 8),
-                    _buildStatCard('Confirmadas', '$confirmed', Colors.green, Icons.check_circle),
+                    _buildStatCard(
+                      'Confirmadas',
+                      '$confirmed',
+                      Colors.green,
+                      Icons.check_circle,
+                    ),
                     const SizedBox(width: 8),
-                    _buildStatCard('Conflictos', '$conflicts', Colors.red, Icons.warning_amber),
+                    _buildStatCard(
+                      'Conflictos',
+                      '$conflicts',
+                      Colors.red,
+                      Icons.warning_amber,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -150,12 +236,19 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
-                        onPressed: syncService.isSyncing || syncService.isOffline || pending == 0
+                        onPressed:
+                            syncService.isSyncing ||
+                                syncService.isOffline ||
+                                pending == 0
                             ? null
                             : () async {
-                                final res = await syncService.syncBatch(manual: true);
+                                final res = await syncService.syncBatch(
+                                  manual: true,
+                                );
                                 if (context.mounted && res != null) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
@@ -171,11 +264,16 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               )
                             : const Icon(Icons.sync, color: Colors.white),
                         label: Text(
-                          syncService.isSyncing ? 'Sincronizando...' : 'Sincronizar Lote',
+                          syncService.isSyncing
+                              ? 'Sincronizando...'
+                              : 'Sincronizar Lote',
                           style: const TextStyle(color: Colors.white),
                         ),
                       ),
@@ -183,11 +281,18 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 14,
+                        ),
                         side: const BorderSide(color: AppTheme.textMuted),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
-                      onPressed: syncService.isOffline || syncService.isSyncing ? null : _download,
+                      onPressed: syncService.isOffline || syncService.isSyncing
+                          ? null
+                          : _download,
                       icon: const Icon(Icons.download, size: 18),
                       label: const Text('Catálogo'),
                     ),
@@ -198,7 +303,11 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                 // 4. Lista de Operaciones Históricas
                 const Text(
                   'Cola y Registro de Operaciones Locales',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
                 ),
                 const SizedBox(height: 8),
 
@@ -215,9 +324,16 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                     alignment: Alignment.center,
                     child: const Column(
                       children: [
-                        Icon(Icons.inbox_outlined, size: 48, color: AppTheme.textMuted),
+                        Icon(
+                          Icons.inbox_outlined,
+                          size: 48,
+                          color: AppTheme.textMuted,
+                        ),
                         SizedBox(height: 12),
-                        Text('Sin operaciones locales registradas', style: TextStyle(color: AppTheme.textMuted)),
+                        Text(
+                          'Sin operaciones locales registradas',
+                          style: TextStyle(color: AppTheme.textMuted),
+                        ),
                       ],
                     ),
                   )
@@ -231,7 +347,12 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
     );
   }
 
-  Widget _buildStatCard(String label, String value, Color color, IconData icon) {
+  Widget _buildStatCard(
+    String label,
+    String value,
+    Color color,
+    IconData icon,
+  ) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
@@ -246,12 +367,19 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
             const SizedBox(height: 6),
             Text(
               value,
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
             ),
             const SizedBox(height: 2),
             Text(
               label,
-              style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppTheme.textSecondary,
+              ),
             ),
           ],
         ),
@@ -291,7 +419,9 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(
-          color: status == 'RECHAZADA_CONFLICTO' ? Colors.red.withOpacity(0.4) : Colors.transparent,
+          color: status == 'RECHAZADA_CONFLICTO'
+              ? Colors.red.withOpacity(0.4)
+              : Colors.transparent,
         ),
       ),
       child: Padding(
@@ -302,9 +432,14 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: isSale ? Colors.blue.withOpacity(0.15) : Colors.purple.withOpacity(0.15),
+                    color: isSale
+                        ? Colors.blue.withOpacity(0.15)
+                        : Colors.purple.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -318,7 +453,10 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: badgeBg,
                     borderRadius: BorderRadius.circular(12),
@@ -337,7 +475,11 @@ class _SyncHistoryScreenState extends State<SyncHistoryScreen> {
             const SizedBox(height: 8),
             Text(
               'UUID: ${uuid.substring(0, 16)}...',
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: AppTheme.textMuted),
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: AppTheme.textMuted,
+              ),
             ),
             if (op['created_at'] != null)
               Text(

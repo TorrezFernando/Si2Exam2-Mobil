@@ -1,7 +1,9 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/db/database_helper.dart';
 import '../../core/services/api_service.dart';
 import '../../core/services/auth_service.dart';
@@ -32,7 +34,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _loadBranches() async {
     try {
       final response = await ApiService.get('/branches');
-      if (response.statusCode != 200) throw Exception('No se pudieron cargar las sucursales');
+      if (response.statusCode != 200)
+        throw Exception('No se pudieron cargar las sucursales');
       final data = jsonDecode(utf8.decode(response.bodyBytes)) as List;
       if (mounted) {
         setState(() {
@@ -62,11 +65,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final day = await showDatePicker(
-        context: context, initialDate: now, firstDate: now, lastDate: now.add(const Duration(days: 30)));
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 30)),
+    );
     if (day == null || !mounted) return;
-    final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 10, minute: 0));
+    final time = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 10, minute: 0),
+    );
     if (time != null && mounted) {
-      setState(() => _pickup = DateTime(day.year, day.month, day.day, time.hour, time.minute));
+      setState(
+        () => _pickup = DateTime(
+          day.year,
+          day.month,
+          day.day,
+          time.hour,
+          time.minute,
+        ),
+      );
     }
   }
 
@@ -78,24 +96,46 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     if (cart.items.isEmpty) return;
     if (syncService.isOffline && !_reserve && !syncService.canSell) {
-      setState(() => _error = 'La compra con tarjeta necesita conexión. La caja offline es solo para personal autorizado.');
+      setState(
+        () => _error = 'La compra con tarjeta necesita conexión. La caja offline es solo para personal autorizado.',
+      );
       return;
     }
     if (_branchId == null && (_reserve || syncService.isOffline)) {
-      setState(() => _error = 'Selecciona una sucursal con catálogo descargado.');
+      setState(
+        () => _error = 'Selecciona una sucursal con catálogo descargado.',
+      );
       return;
     }
     bool cashConfirmed = false;
     if (syncService.isOffline && !_reserve) {
-      cashConfirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar cobro en efectivo'),
-        content: Text('¿Recibiste Bs ${cart.totalAmount.toStringAsFixed(2)} del cliente?'),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Efectivo recibido'))],
-      )) ?? false;
+      cashConfirmed =
+          await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Confirmar cobro en efectivo'),
+              content: Text(
+                '¿Recibiste Bs ${cart.totalAmount.toStringAsFixed(2)} del cliente?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Efectivo recibido'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
       if (!cashConfirmed || !mounted) return;
     }
-    if (_reserve && (_branchId == null || _pickup == null || !_pickup!.isAfter(DateTime.now()))) {
+    if (_reserve &&
+        (_branchId == null ||
+            _pickup == null ||
+            !_pickup!.isAfter(DateTime.now()))) {
       setState(() => _error = 'Selecciona una sucursal y un horario futuro.');
       return;
     }
@@ -105,16 +145,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     final items = cart.items
-        .map((item) => <String, dynamic>{'variant_id': item.variant?['id'] ?? 0, 'quantity': item.quantity})
+        .map(
+          (item) => <String, dynamic>{
+            'variant_id': item.variant?['id'] ?? 0,
+            'quantity': item.quantity,
+          },
+        )
         .toList();
 
-    final offlineItems = cart.items.map((i) => {
-      'variant_id': i.variant?['id'] ?? 0,
-      'quantity': i.quantity,
-      'unit_price': i.unitPrice,
-      'product_name': i.product['name'] ?? '',
-      'variant_label': '${i.variant?['size'] ?? ''} ${i.variant?['color'] ?? ''}'.trim(),
-    }).toList();
+    final offlineItems = cart.items
+        .map(
+          (i) => {
+            'variant_id': i.variant?['id'] ?? 0,
+            'quantity': i.quantity,
+            'unit_price': i.unitPrice,
+            'product_name': i.product['name'] ?? '',
+            'variant_label':
+                '${i.variant?['size'] ?? ''} ${i.variant?['color'] ?? ''}'
+                    .trim(),
+          },
+        )
+        .toList();
 
     // ── MODO OFFLINE EXPLICITO ──
     if (syncService.isOffline) {
@@ -134,7 +185,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               backgroundColor: Colors.amber,
-              content: Text('Modo Offline: Reserva guardada en SQLite. Se sincronizará al conectar.'),
+              content: Text(
+                'Modo Offline: Reserva guardada en SQLite. Se sincronizará al conectar.',
+              ),
             ),
           );
           Navigator.popUntil(context, (route) => route.isFirst);
@@ -188,33 +241,52 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       if (_reserve) {
         if (await syncService.cachedBranch() != _branchId) {
-          if (!await syncService.downloadCatalog(_branchId!)) throw Exception(syncService.message ?? 'Descarga el catálogo de la sucursal.');
+          if (!await syncService.downloadCatalog(_branchId!))
+            throw Exception(
+              syncService.message ?? 'Descarga el catálogo de la sucursal.',
+            );
         }
-        await syncService.recordOfflineReservation(branchId: _branchId!, tenantId: auth.currentUser?['tenant_id'],
-          userId: auth.currentUser!['id'], items: offlineItems, pickupDate: _pickup!.toUtc().toIso8601String());
+        await syncService.recordOfflineReservation(
+          branchId: _branchId!,
+          tenantId: auth.currentUser?['tenant_id'],
+          userId: auth.currentUser!['id'],
+          items: offlineItems,
+          pickupDate: _pickup!.toUtc().toIso8601String(),
+        );
         cart.clearCart();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Reserva guardada; revisa su confirmación en Sincronización.')));
+          const SnackBar(
+            content: Text(
+              'Reserva guardada; revisa su confirmación en Sincronización.',
+            ),
+          ),
+        );
         Navigator.popUntil(context, (route) => route.isFirst);
       } else {
         final response = await ApiService.post('/orders', {
           'items': items,
           'order_type': 'online_delivery',
           'payment_method': 'tarjeta',
-          'request_key': _requestKey
+          'request_key': _requestKey,
         });
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         if (response.statusCode != 201) {
           // Error explícito del servidor (400, 401, 403, 422). NO convertir a venta offline en efectivo.
           if (mounted) {
-            setState(() => _error = data['detail'] ?? 'No se pudo crear la orden en el servidor.');
+            setState(
+              () => _error =
+                  data['detail'] ?? 'No se pudo crear la orden en el servidor.',
+            );
           }
           return;
         }
         cart.clearCart();
         if (!mounted) return;
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => PaymentScreen(orderId: data['id'])));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => PaymentScreen(orderId: data['id'])),
+        );
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -264,40 +336,62 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ],
               ),
             ),
-          Text('Total: Bs ${cart.totalAmount.toStringAsFixed(2)}', style: Theme.of(context).textTheme.headlineSmall),
+          Text(
+            'Total: Bs ${cart.totalAmount.toStringAsFixed(2)}',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
           SwitchListTile(
-              title: const Text('Reservar para probar en tienda'),
-              value: _reserve,
-              onChanged: _busy ? null : (v) => setState(() => _reserve = v)),
+            title: const Text('Reservar para probar en tienda'),
+            value: _reserve,
+            onChanged: _busy ? null : (v) => setState(() => _reserve = v),
+          ),
           if (_reserve) ...[
             DropdownButtonFormField<int>(
-                value: _branchId,
-                decoration: const InputDecoration(labelText: 'Sucursal'),
-                items: _branches
-                    .map((b) => DropdownMenuItem<int>(value: b['id'], child: Text(b['name'] ?? 'Sucursal ${b['id']}')))
-                    .toList(),
-                onChanged: _busy ? null : (v) => setState(() => _branchId = v)),
+              value: _branchId,
+              decoration: const InputDecoration(labelText: 'Sucursal'),
+              items: _branches
+                  .map(
+                    (b) => DropdownMenuItem<int>(
+                      value: b['id'],
+                      child: Text(b['name'] ?? 'Sucursal ${b['id']}'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _busy ? null : (v) => setState(() => _branchId = v),
+            ),
             TextButton.icon(
-                onPressed: _busy ? null : _pickDate,
-                icon: const Icon(Icons.calendar_today),
-                label: Text(_pickup == null ? 'Elegir fecha y hora' : _pickup.toString().substring(0, 16))),
+              onPressed: _busy ? null : _pickDate,
+              icon: const Icon(Icons.calendar_today),
+              label: Text(
+                _pickup == null
+                    ? 'Elegir fecha y hora'
+                    : _pickup.toString().substring(0, 16),
+              ),
+            ),
           ] else
             Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Text(syncService.isOffline
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                syncService.isOffline
                     ? 'Modo Offline: La venta se registrará como pago en efectivo y se sincronizará con el inventario central.'
-                    : 'Paga en Libélula con los medios habilitados por el comercio. No ingreses datos de tarjeta en esta aplicación.')),
-          if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+                    : 'Paga en Libélula con los medios habilitados por el comercio. No ingreses datos de tarjeta en esta aplicación.',
+              ),
+            ),
+          if (_error != null)
+            Text(_error!, style: const TextStyle(color: Colors.red)),
           const SizedBox(height: 20),
           ElevatedButton(
-              onPressed: _busy ? null : _submit,
-              child: Text(_busy
+            onPressed: _busy ? null : _submit,
+            child: Text(
+              _busy
                   ? 'Procesando...'
                   : _reserve
-                      ? 'Reservar prendas'
-                      : syncService.isOffline
-                          ? 'Guardar venta offline (SQLite)'
-                          : 'Continuar al pago')),
+                  ? 'Reservar prendas'
+                  : syncService.isOffline
+                  ? 'Guardar venta offline (SQLite)'
+                  : 'Continuar al pago',
+            ),
+          ),
         ],
       ),
     );
@@ -321,30 +415,58 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Future<void> _perform(bool verify) async {
     setState(() => _busy = true);
     try {
-      final response = await ApiService.post('/payments/${widget.orderId}/${verify ? 'verify' : 'checkout'}', {});
+      final response = await ApiService.post(
+        '/payments/${widget.orderId}/${verify ? 'verify' : 'checkout'}',
+        {},
+      );
       final data = jsonDecode(utf8.decode(response.bodyBytes));
-      if (response.statusCode != 200) throw Exception(data['detail'] ?? 'Error al consultar el pago');
+      if (response.statusCode != 200)
+        throw Exception(data['detail'] ?? 'Error al consultar el pago');
       if (!mounted) return;
       if (verify || data['paid'] == true) {
-        setState(() { _paid = data['is_paid'] == true || data['paid'] == true; _message = _paid ? 'Pago confirmado. Gracias por tu compra.' : 'Libélula aún no confirma el pago.'; });
+        setState(() {
+          _paid = data['is_paid'] == true || data['paid'] == true;
+          _message = _paid
+              ? 'Pago confirmado. Gracias por tu compra.'
+              : 'Libélula aún no confirma el pago.';
+        });
       } else {
         _paymentUrl = data['payment_url'];
-        try { await _channel.invokeMethod('openUrl', _paymentUrl); }
-        on PlatformException { setState(() => _message = 'Abre el enlace de pago en tu navegador.'); }
-        on MissingPluginException { setState(() => _message = 'Abre el enlace de pago en tu navegador.'); }
+        try {
+          await _channel.invokeMethod('openUrl', _paymentUrl);
+        } on PlatformException {
+          setState(() => _message = 'Abre el enlace de pago en tu navegador.');
+        } on MissingPluginException {
+          setState(() => _message = 'Abre el enlace de pago en tu navegador.');
+        }
       }
-    } catch (e) { if (mounted) setState(() => _message = e.toString()); }
-    finally { if (mounted) setState(() => _busy = false); }
+    } catch (e) {
+      if (mounted) setState(() => _message = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text('Pago · Orden #${widget.orderId}')),
-    body: ListView(padding: const EdgeInsets.all(24), children: [
-      Text(_message), const SizedBox(height: 24),
-      if (!_paid) ...[
-        ElevatedButton(onPressed: _busy ? null : () => _perform(false), child: const Text('Abrir Libélula')),
-        OutlinedButton(onPressed: _busy ? null : () => _perform(true), child: const Text('Verificar pago')),
-        if (_paymentUrl != null) SelectableText(_paymentUrl!),
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text('Pago · Orden #${widget.orderId}')),
+    body: ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Text(_message),
+        const SizedBox(height: 24),
+        if (!_paid) ...[
+          ElevatedButton(
+            onPressed: _busy ? null : () => _perform(false),
+            child: const Text('Abrir Libélula'),
+          ),
+          OutlinedButton(
+            onPressed: _busy ? null : () => _perform(true),
+            child: const Text('Verificar pago'),
+          ),
+          if (_paymentUrl != null) SelectableText(_paymentUrl!),
+        ],
       ],
-    ]));
+    ),
+  );
 }

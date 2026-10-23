@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/services/catalog_service.dart';
 import '../../core/services/cart_service.dart';
 import '../../core/services/auth_service.dart';
@@ -44,10 +45,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Future<void> _fetchDetails() async {
     try {
       final product = await CatalogService.getProductDetails(widget.productId);
-      dynamic variant = (product['variants'] != null && product['variants'].isNotEmpty)
+      dynamic variant =
+          (product['variants'] != null && product['variants'].isNotEmpty)
           ? product['variants'][0]
           : null;
-      
+
       if (mounted) {
         setState(() {
           _product = product;
@@ -63,9 +65,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       // Fallback a SQLite local si no hay conexión
       try {
         final db = await DatabaseHelper.instance.database;
-        final prods = await db.query('products', where: 'id = ?', whereArgs: [widget.productId]);
+        final prods = await db.query(
+          'products',
+          where: 'id = ?',
+          whereArgs: [widget.productId],
+        );
         if (prods.isNotEmpty && mounted) {
-          final vars = await db.query('variants', where: 'product_id = ?', whereArgs: [widget.productId]);
+          final vars = await db.query(
+            'variants',
+            where: 'product_id = ?',
+            whereArgs: [widget.productId],
+          );
           final prod = Map<String, dynamic>.from(prods.first);
           prod['variants'] = vars;
           dynamic variant = vars.isNotEmpty ? vars.first : null;
@@ -99,7 +109,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       final newVal = _quantity + delta;
       if (newVal >= 1) {
         if (_selectedVariant != null && newVal > _totalStock) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Solo hay $_totalStock en stock'), duration: const Duration(seconds: 1)));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Solo hay $_totalStock en stock'),
+              duration: const Duration(seconds: 1),
+            ),
+          );
           _quantity = _totalStock;
         } else {
           _quantity = newVal;
@@ -120,21 +135,32 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   void _addToCart() {
     if (_product == null) return;
-    if (_product['variants'] != null && _product['variants'].isNotEmpty && _selectedVariant == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecciona una talla/color')));
+    if (_product['variants'] != null &&
+        _product['variants'].isNotEmpty &&
+        _selectedVariant == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona una talla/color')),
+      );
       return;
     }
     if (_selectedVariant != null && _totalStock == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Este producto está fuera de stock.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este producto está fuera de stock.')),
+      );
       return;
     }
 
     if (_selectedVariant != null && _quantity > _totalStock) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Solo hay $_totalStock disponibles.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Solo hay $_totalStock disponibles.')),
+      );
       return;
     }
 
-    Provider.of<CartService>(context, listen: false).addToCart(_product, _selectedVariant, _quantity);
+    Provider.of<CartService>(
+      context,
+      listen: false,
+    ).addToCart(_product, _selectedVariant, _quantity);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Se ha añadido al carrito'),
@@ -151,35 +177,82 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final sync = MobileSyncService.instance;
     try {
       final branch = await sync.cachedBranch() ?? sync.assignedBranch;
-      if (branch == null) throw Exception('Selecciona y descarga una sucursal desde Sincronización.');
-      if (_selectedVariant == null) throw Exception('Selecciona talla y color.');
-      if (await sync.cachedBranch() != branch && !await sync.downloadCatalog(branch)) {
+      if (branch == null)
+        throw Exception(
+          'Selecciona y descarga una sucursal desde Sincronización.',
+        );
+      if (_selectedVariant == null)
+        throw Exception('Selecciona talla y color.');
+      if (await sync.cachedBranch() != branch &&
+          !await sync.downloadCatalog(branch)) {
         throw Exception(sync.message ?? 'Descarga primero el catálogo.');
       }
       if (!mounted) return;
-      final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-        title: const Text('Reservar prenda'), content: Text('Reservar $_quantity unidad(es) en sucursal $branch.'),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar reserva'))]));
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Reservar prenda'),
+          content: Text('Reservar $_quantity unidad(es) en sucursal $branch.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Guardar reserva'),
+            ),
+          ],
+        ),
+      );
       if (confirmed != true) return;
-      await sync.recordOfflineReservation(branchId: branch, tenantId: sync.tenantId, userId: sync.ownerId!, items: [{
-        'variant_id': _selectedVariant['id'], 'quantity': _quantity,
-        'unit_price': _selectedVariant['price'] ?? _selectedVariant['price_override'] ?? _product['base_price'],
-        'product_name': _product['name'], 'variant_label': '${_selectedVariant['size']} ${_selectedVariant['color']}',
-      }]);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reserva guardada. Consulta su confirmación en Sincronización.')));
+      await sync.recordOfflineReservation(
+        branchId: branch,
+        tenantId: sync.tenantId,
+        userId: sync.ownerId!,
+        items: [
+          {
+            'variant_id': _selectedVariant['id'],
+            'quantity': _quantity,
+            'unit_price':
+                _selectedVariant['price'] ??
+                _selectedVariant['price_override'] ??
+                _product['base_price'],
+            'product_name': _product['name'],
+            'variant_label':
+                '${_selectedVariant['size']} ${_selectedVariant['color']}',
+          },
+        ],
+      );
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Reserva guardada. Consulta su confirmación en Sincronización.',
+            ),
+          ),
+        );
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (_product == null) return const Scaffold(body: Center(child: Text('Producto no encontrado')));
+    if (_isLoading)
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_product == null)
+      return const Scaffold(
+        body: Center(child: Text('Producto no encontrado')),
+      );
 
     final imageUrl = _selectedVariant?['image_url'] ?? _product['image_url'];
-    final price = _selectedVariant?['price'] ?? _selectedVariant?['price_override'] ?? _product['base_price'];
+    final price =
+        _selectedVariant?['price'] ??
+        _selectedVariant?['price_override'] ??
+        _product['base_price'];
 
     return Scaffold(
       appBar: AppBar(title: Text(_product['name'])),
@@ -190,32 +263,56 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             Container(
               height: 300,
               color: AppTheme.bgHover,
-              child: ProductImage(
-                imageUrl: imageUrl,
-                fit: BoxFit.cover,
-              ),
+              child: ProductImage(imageUrl: imageUrl, fit: BoxFit.cover),
             ),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_product['name'], style: Theme.of(context).textTheme.headlineMedium),
+                  Text(
+                    _product['name'],
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
                   const SizedBox(height: 8),
-                  Text('\$${price.toStringAsFixed(2)}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                  Text(
+                    '\$${price.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primary,
+                    ),
+                  ),
                   const SizedBox(height: 16),
-                  Text(_product['description'] ?? 'Sin descripción', style: const TextStyle(color: AppTheme.textSecondary, height: 1.5)),
-                  
-                  if (_product['variants'] != null && _product['variants'].isNotEmpty) ...[
+                  Text(
+                    _product['description'] ?? 'Sin descripción',
+                    style: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      height: 1.5,
+                    ),
+                  ),
+
+                  if (_product['variants'] != null &&
+                      _product['variants'].isNotEmpty) ...[
                     const SizedBox(height: 24),
-                    const Text('Variantes', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    const Text(
+                      'Variantes',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       children: (_product['variants'] as List).map((variant) {
-                        final isSelected = _selectedVariant != null && _selectedVariant['id'] == variant['id'];
+                        final isSelected =
+                            _selectedVariant != null &&
+                            _selectedVariant['id'] == variant['id'];
                         return ChoiceChip(
-                          label: Text('${variant['size']} - ${variant['color']}'),
+                          label: Text(
+                            '${variant['size']} - ${variant['color']}',
+                          ),
                           selected: isSelected,
                           onSelected: (selected) {
                             if (selected) {
@@ -232,32 +329,58 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                   if (_selectedVariant != null) ...[
                     const SizedBox(height: 24),
-                    const Text('Disponibilidad', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    const Text(
+                      'Disponibilidad',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     if (_inventory.isEmpty)
-                      const Text('Consultando inventario...', style: TextStyle(color: AppTheme.textSecondary))
+                      const Text(
+                        'Consultando inventario...',
+                        style: TextStyle(color: AppTheme.textSecondary),
+                      )
                     else
-                      ..._inventory.map((inv) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(inv['branch']?['name'] ?? 'Sucursal ${inv['branch_id']}'),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: (inv['stock'] > 0) ? AppTheme.success.withOpacity(0.2) : AppTheme.danger.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    (inv['stock'] > 0) ? '${inv['stock']} en stock' : 'Agotado',
-                                    style: TextStyle(color: (inv['stock'] > 0) ? AppTheme.success : AppTheme.danger, fontSize: 12),
+                      ..._inventory.map(
+                        (inv) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                inv['branch']?['name'] ??
+                                    'Sucursal ${inv['branch_id']}',
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: (inv['stock'] > 0)
+                                      ? AppTheme.success.withOpacity(0.2)
+                                      : AppTheme.danger.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  (inv['stock'] > 0)
+                                      ? '${inv['stock']} en stock'
+                                      : 'Agotado',
+                                  style: TextStyle(
+                                    color: (inv['stock'] > 0)
+                                        ? AppTheme.success
+                                        : AppTheme.danger,
+                                    fontSize: 12,
                                   ),
                                 ),
-                              ],
-                            ),
-                          )),
-                  ]
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -271,7 +394,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               // Botón IA Try-On
-              if (_product['image_url'] != null || _product['garment_image_url'] != null)
+              if (_product['image_url'] != null ||
+                  _product['garment_image_url'] != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: SizedBox(
@@ -291,7 +415,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             builder: (context) => AITryonScreen(
                               productId: _product['id'],
                               productName: _product['name'],
-                              productImageUrl: _product['garment_image_url'] ?? _product['image_url'],
+                              productImageUrl:
+                                  _product['garment_image_url'] ??
+                                  _product['image_url'],
                             ),
                           ),
                         );
@@ -304,7 +430,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 children: [
                   Container(
                     decoration: BoxDecoration(
-                      border: Border.all(color: AppTheme.textMuted.withOpacity(0.2)),
+                      border: Border.all(
+                        color: AppTheme.textMuted.withOpacity(0.2),
+                      ),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -313,14 +441,26 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         IconButton(
                           icon: const Icon(Icons.remove, size: 18),
                           onPressed: () => _updateQuantity(-1),
-                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
                           padding: EdgeInsets.zero,
                         ),
-                        Text('$_quantity', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(
+                          '$_quantity',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
                         IconButton(
                           icon: const Icon(Icons.add, size: 18),
                           onPressed: () => _updateQuantity(1),
-                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
                           padding: EdgeInsets.zero,
                         ),
                       ],
@@ -334,8 +474,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         side: const BorderSide(color: AppTheme.accent),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      onPressed: (_selectedVariant != null && _totalStock == 0) ? null : _reserveProduct,
-                      child: const Text('Reservar', style: TextStyle(fontSize: 13)),
+                      onPressed: (_selectedVariant != null && _totalStock == 0)
+                          ? null
+                          : _reserveProduct,
+                      child: const Text(
+                        'Reservar',
+                        style: TextStyle(fontSize: 13),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -346,7 +491,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         backgroundColor: AppTheme.accent,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      onPressed: (_selectedVariant != null && _totalStock == 0) ? null : _addToCart,
+                      onPressed: (_selectedVariant != null && _totalStock == 0)
+                          ? null
+                          : _addToCart,
                       child: const Text('Añadir al Carrito'),
                     ),
                   ),

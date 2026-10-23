@@ -5,11 +5,7 @@ class CartItem {
   final dynamic variant;
   int quantity;
 
-  CartItem({
-    required this.product,
-    this.variant,
-    this.quantity = 1,
-  });
+  CartItem({required this.product, this.variant, this.quantity = 1});
 
   double get unitPrice {
     if (variant != null) {
@@ -30,14 +26,18 @@ class CartService extends ChangeNotifier {
   final List<CartItem> _items = [];
   String? _account;
   void bindAccount(String? account) {
-    if (_account != account) { _account = account; _items.clear(); }
+    if (_account != account) {
+      _account = account;
+      _items.clear();
+    }
   }
 
   List<CartItem> get items => _items;
 
   int get totalItemsCount => _items.fold(0, (sum, item) => sum + item.quantity);
 
-  double get totalAmount => _items.fold(0, (sum, item) => sum + item.totalPrice);
+  double get totalAmount =>
+      _items.fold(0, (sum, item) => sum + item.totalPrice);
 
   void addToCart(dynamic product, dynamic variant, int quantity) {
     int availableStock = 9999;
@@ -46,17 +46,25 @@ class CartService extends ChangeNotifier {
     }
     if (availableStock <= 0) return;
 
-    final existingIndex = _items.indexWhere((item) =>
-        item.product['id'] == product['id'] &&
-        ((item.variant == null && variant == null) ||
-            (item.variant != null && variant != null && item.variant['id'] == variant['id'])));
+    final existingIndex = _items.indexWhere(
+      (item) =>
+          item.product['id'] == product['id'] &&
+          ((item.variant == null && variant == null) ||
+              (item.variant != null &&
+                  variant != null &&
+                  item.variant['id'] == variant['id'])),
+    );
 
     if (existingIndex >= 0) {
       final newQty = _items[existingIndex].quantity + quantity;
-      _items[existingIndex].quantity = newQty > availableStock ? availableStock : newQty;
+      _items[existingIndex].quantity = newQty > availableStock
+          ? availableStock
+          : newQty;
     } else {
       final initialQty = quantity > availableStock ? availableStock : quantity;
-      _items.add(CartItem(product: product, variant: variant, quantity: initialQty));
+      _items.add(
+        CartItem(product: product, variant: variant, quantity: initialQty),
+      );
     }
     notifyListeners();
   }
@@ -92,5 +100,4 @@ class CartService extends ChangeNotifier {
     _items.clear();
     notifyListeners();
   }
-
 }

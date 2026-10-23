@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import 'core/theme/theme.dart';
 import 'core/services/auth_service.dart';
 import 'core/services/cart_service.dart';
@@ -15,7 +16,8 @@ void main() {
         ChangeNotifierProvider(create: (_) => AuthService()),
         ChangeNotifierProxyProvider<AuthService, CartService>(
           create: (_) => CartService(),
-          update: (_, auth, cart) => (cart ?? CartService())..bindAccount(auth.token),
+          update: (_, auth, cart) =>
+              (cart ?? CartService())..bindAccount(auth.token),
         ),
         ChangeNotifierProvider.value(value: MobileSyncService.instance),
       ],
