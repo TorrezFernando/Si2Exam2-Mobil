@@ -34,6 +34,9 @@ Map<String, dynamic> catalog(int tenant, {int stock = 5}) => {
     {
       'id': 1,
       'name': 'Camisa',
+      'weight_grams': 250.5,
+      'fabric_type': 'Algodón',
+      'design': 'Floral',
       'base_price': 100,
       'variants': [
         {
@@ -112,6 +115,32 @@ void main() {
     sync.dispose();
     await helper.close();
     await root.delete(recursive: true);
+  });
+
+  test('garment attributes survive offline catalog and reopening', () async {
+    await helper.close();
+    final row = (await (await helper.database).query('products')).single;
+    expect(row['weight_grams'], 250.5);
+    expect(row['fabric_type'], 'Algodón');
+    expect(row['design'], 'Floral');
+  });
+
+  test('v3 upgrade preserves queued operations and products', () async {
+    await sell();
+    final db = await helper.database;
+    for (final name in ['weight_grams', 'fabric_type', 'design']) {
+      await db.execute('ALTER TABLE products DROP COLUMN $name');
+    }
+    await db.setVersion(3);
+    await helper.close();
+    final upgraded = await helper.database;
+    expect(await upgraded.getVersion(), 4);
+    final row = (await upgraded.query('products')).single;
+    expect(row['name'], 'Camisa');
+    expect(row.containsKey('weight_grams'), isTrue);
+    expect(row['weight_grams'], isNull);
+    expect((await upgraded.query('sync_operations')).length, 1);
+    expect(await stock(), 3);
   });
 
   test(

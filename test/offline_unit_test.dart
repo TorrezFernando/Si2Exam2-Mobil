@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fashionstore_mobile/core/services/cart_service.dart';
@@ -6,6 +7,18 @@ import 'package:fashionstore_mobile/core/services/auth_service.dart';
 import 'package:fashionstore_mobile/core/services/mobile_sync_service.dart';
 
 void main() {
+  test('Promotional effective price precedes list price', () {
+    final item = CartItem(
+      product: {'base_price': 120, 'effective_price': 90},
+      variant: {'price_override': 200, 'effective_price': 150},
+    );
+    expect(item.unitPrice, 150);
+    expect(
+      CartItem(product: {'base_price': 120, 'effective_price': 90}).unitPrice,
+      90,
+    );
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('CartService Pricing & Stock Ceiling Tests', () {
@@ -49,7 +62,11 @@ void main() {
       cart.addToCart(product, variant, 5);
 
       expect(cart.items.length, 1);
-      expect(cart.items.first.quantity, 3, reason: 'Quantity must be capped at variant stock');
+      expect(
+        cart.items.first.quantity,
+        3,
+        reason: 'Quantity must be capped at variant stock',
+      );
       expect(cart.totalAmount, 165.0);
 
       // Try adding more units - should stay capped at 3
@@ -95,14 +112,17 @@ void main() {
   });
 
   group('MobileSyncService Validation Tests', () {
-    test('ValidationException and InsufficientStockException work as expected', () {
-      final vEx = ValidationException('Cantidad inválida');
-      expect(vEx.message, 'Cantidad inválida');
-      expect(vEx.toString(), 'Cantidad inválida');
+    test(
+      'ValidationException and InsufficientStockException work as expected',
+      () {
+        final vEx = ValidationException('Cantidad inválida');
+        expect(vEx.message, 'Cantidad inválida');
+        expect(vEx.toString(), 'Cantidad inválida');
 
-      final stockEx = InsufficientStockException('Stock agotado');
-      expect(stockEx.message, 'Stock agotado');
-      expect(stockEx.toString(), 'Stock agotado');
-    });
+        final stockEx = InsufficientStockException('Stock agotado');
+        expect(stockEx.message, 'Stock agotado');
+        expect(stockEx.toString(), 'Stock agotado');
+      },
+    );
   });
 }

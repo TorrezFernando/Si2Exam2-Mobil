@@ -216,7 +216,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             'quantity': _quantity,
             'unit_price':
                 _selectedVariant['price'] ??
+                _selectedVariant['effective_price'] ??
                 _selectedVariant['price_override'] ??
+                _product['effective_price'] ??
                 _product['base_price'],
             'product_name': _product['name'],
             'variant_label':
@@ -251,7 +253,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final imageUrl = _selectedVariant?['image_url'] ?? _product['image_url'];
     final price =
         _selectedVariant?['price'] ??
+        _selectedVariant?['effective_price'] ??
         _selectedVariant?['price_override'] ??
+        _product['effective_price'] ??
         _product['base_price'];
 
     return Scaffold(
@@ -292,6 +296,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                   ),
 
+                  if (_product['weight_grams'] != null)
+                    Text('Peso: ${_product['weight_grams']} g'),
+                  if ((_product['fabric_type'] ?? '').toString().isNotEmpty)
+                    Text('Tipo de tela: ${_product['fabric_type']}'),
+                  if ((_product['design'] ?? '').toString().isNotEmpty)
+                    Text('Diseño: ${_product['design']}'),
                   if (_product['variants'] != null &&
                       _product['variants'].isNotEmpty) ...[
                     const SizedBox(height: 24),

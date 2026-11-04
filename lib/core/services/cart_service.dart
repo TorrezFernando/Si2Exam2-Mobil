@@ -9,6 +9,8 @@ class CartItem {
 
   double get unitPrice {
     if (variant != null) {
+      if (variant['effective_price'] != null)
+        return (variant['effective_price'] as num).toDouble();
       if (variant['price'] != null) {
         return (variant['price'] as num).toDouble();
       }
@@ -16,7 +18,8 @@ class CartItem {
         return (variant['price_override'] as num).toDouble();
       }
     }
-    return (product['base_price'] as num).toDouble();
+    return ((product['effective_price'] ?? product['base_price']) as num)
+        .toDouble();
   }
 
   double get totalPrice => unitPrice * quantity;

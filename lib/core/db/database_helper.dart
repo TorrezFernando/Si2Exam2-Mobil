@@ -30,8 +30,19 @@ class DatabaseHelper {
         return await (_factory ?? databaseFactory).openDatabase(
           join(await directory, 'fashionstore_account_$scope.db'),
           options: OpenDatabaseOptions(
-            version: 3,
+            version: 4,
             onCreate: _createDB,
+            onUpgrade: (db, oldVersion, newVersion) async {
+              if (oldVersion < 4) {
+                await db.execute(
+                  'ALTER TABLE products ADD COLUMN weight_grams REAL',
+                );
+                await db.execute(
+                  'ALTER TABLE products ADD COLUMN fabric_type TEXT',
+                );
+                await db.execute('ALTER TABLE products ADD COLUMN design TEXT');
+              }
+            },
             onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           ),
         );
@@ -82,6 +93,9 @@ class DatabaseHelper {
         description TEXT,
         category_id INTEGER,
         category_name TEXT,
+        weight_grams REAL,
+        fabric_type TEXT,
+        design TEXT,
         base_price REAL NOT NULL,
         image_url TEXT,
         is_active INTEGER NOT NULL

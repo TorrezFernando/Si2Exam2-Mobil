@@ -348,7 +348,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      '\$${product['base_price'].toStringAsFixed(2)}',
+                      '\$${(product['effective_price'] ?? product['base_price']).toStringAsFixed(2)}',
                       style: const TextStyle(
                         color: AppTheme.primary,
                         fontWeight: FontWeight.bold,
