@@ -9,6 +9,7 @@ import '../../core/services/api_service.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/cart_service.dart';
 import '../../core/services/mobile_sync_service.dart';
+import '../../core/services/notification_service.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -180,7 +181,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             notes: 'Reserva guardada offline en SQLite',
             items: offlineItems,
           );
+          final totalStr = cart.totalAmount.toStringAsFixed(2);
           cart.clearCart();
+          await NotificationService.instance.notify(
+            title: '📅 Reserva Offline Guardada',
+            body:
+                'Tu reserva de ${offlineItems.length} prenda(s) por Bs $totalStr fue guardada localmente y se sincronizará al conectar.',
+            type: 'reservation',
+          );
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -192,6 +200,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           );
           Navigator.popUntil(context, (route) => route.isFirst);
         } else {
+          final totalStr = cart.totalAmount.toStringAsFixed(2);
           await syncService.recordOfflineSale(
             branchId: _branchId!,
             tenantId: auth.currentUser?['tenant_id'],
@@ -203,6 +212,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             items: offlineItems,
           );
           cart.clearCart();
+          await NotificationService.instance.notify(
+            title: '📦 Compra Offline Registrada',
+            body:
+                'Venta en efectivo por Bs $totalStr guardada en SQLite. Se enviará al servidor al recuperar conexión.',
+            type: 'purchase',
+          );
           if (!mounted) return;
           showDialog(
             context: context,
@@ -246,6 +261,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               syncService.message ?? 'Descarga el catálogo de la sucursal.',
             );
         }
+        final totalStr = cart.totalAmount.toStringAsFixed(2);
         await syncService.recordOfflineReservation(
           branchId: _branchId!,
           tenantId: auth.currentUser?['tenant_id'],
@@ -254,6 +270,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           pickupDate: _pickup!.toUtc().toIso8601String(),
         );
         cart.clearCart();
+        await NotificationService.instance.notify(
+          title: '📅 Reserva Registrada',
+          body:
+              'Tu reserva de ${offlineItems.length} prenda(s) por Bs $totalStr fue registrada para retiro en tienda.',
+          type: 'reservation',
+        );
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -264,6 +286,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         );
         Navigator.popUntil(context, (route) => route.isFirst);
       } else {
+        final totalStr = cart.totalAmount.toStringAsFixed(2);
         final response = await ApiService.post('/orders', {
           'items': items,
           'order_type': 'online_delivery',
@@ -282,6 +305,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           return;
         }
         cart.clearCart();
+        await NotificationService.instance.notify(
+          title: '🛍️ Orden #${data['id']} Creada',
+          body:
+              'Tu pedido por Bs $totalStr fue registrado. Procede con el pago para completarlo.',
+          type: 'purchase',
+        );
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
@@ -424,12 +453,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
         throw Exception(data['detail'] ?? 'Error al consultar el pago');
       if (!mounted) return;
       if (verify || data['paid'] == true) {
+        final isPaidNow = data['is_paid'] == true || data['paid'] == true;
         setState(() {
-          _paid = data['is_paid'] == true || data['paid'] == true;
+          _paid = isPaidNow;
           _message = _paid
               ? 'Pago confirmado. Gracias por tu compra.'
               : 'Libélula aún no confirma el pago.';
         });
+        if (isPaidNow) {
+          await NotificationService.instance.notify(
+            title: '✅ Pago Confirmado · Orden #${widget.orderId}',
+            body: 'Tu compra ha sido pagada y confirmada exitosamente. ¡Gracias por comprar en FashionStore!',
+            type: 'payment',
+          );
+        }
       } else {
         _paymentUrl = data['payment_url'];
         try {

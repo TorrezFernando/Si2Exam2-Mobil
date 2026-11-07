@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/catalog_service.dart';
 import '../../core/services/cart_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/product_image.dart';
+import '../auth/login_screen.dart';
 import '../cart/cart_screen.dart';
+import '../notifications/notifications_screen.dart';
 import '../reservations/reservation_screen.dart';
 import 'product_detail_screen.dart';
 import '../chat/chat_screen.dart';
@@ -23,14 +26,33 @@ class _CatalogScreenState extends State<CatalogScreen> {
   List<dynamic> _products = [];
   List<dynamic> _filteredProducts = [];
   List<dynamic> _recommendedProducts = [];
+  List<Map<String, dynamic>> _stores = [];
+  String? _selectedStoreSlug;
+  String? _selectedStoreName;
+  String? _lastAuthKey;
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _fetchProducts();
     _searchController.addListener(_onSearchChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchProducts();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = Provider.of<AuthService>(context);
+    final authKey = '${auth.token ?? "anon"}:${auth.currentUser?['id'] ?? ""}:${auth.currentUser?['tenant_id'] ?? ""}';
+    if (_lastAuthKey != null && _lastAuthKey != authKey) {
+      _lastAuthKey = authKey;
+      _fetchProducts();
+    } else {
+      _lastAuthKey = authKey;
+    }
   }
 
   @override
@@ -52,26 +74,81 @@ class _CatalogScreenState extends State<CatalogScreen> {
     });
   }
 
-  Future<void> _fetchProducts() async {
+  Future<void> _onStoreChanged(String? slug) async {
+    if (slug == null || slug.isEmpty || slug == _selectedStoreSlug) return;
+    final storeObj = _stores.firstWhere(
+      (s) => s['slug'] == slug,
+      orElse: () => {'slug': slug, 'name': slug},
+    );
+    await CatalogService.setSelectedStore(slug, storeObj['name']?.toString());
+    if (!mounted) return;
+    Provider.of<CartService>(context, listen: false).clearCart();
+    setState(() {
+      _selectedStoreSlug = slug;
+      _selectedStoreName = storeObj['name']?.toString();
+      _isLoading = true;
+    });
+    await _fetchProducts(forceSlug: slug);
+  }
+
+  Future<void> _fetchProducts({String? forceSlug}) async {
     final syncService = MobileSyncService.instance;
     if (syncService.isOffline) {
-      final localProds = await syncService.getLocalProducts();
-      if (!mounted) return;
-      setState(() {
-        _products = localProds;
-        _filteredProducts = localProds;
-        _recommendedProducts = [];
-        _isLoading = false;
-      });
+      try {
+        final localProds = await syncService.getLocalProducts();
+        if (!mounted) return;
+        setState(() {
+          _products = localProds;
+          _filteredProducts = localProds;
+          _recommendedProducts = [];
+          _isLoading = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _products = [];
+          _filteredProducts = [];
+          _recommendedProducts = [];
+          _isLoading = false;
+        });
+      }
       return;
     }
 
     try {
       final auth = Provider.of<AuthService>(context, listen: false);
-      final products = await CatalogService.getProducts();
+      final userTenantId = auth.currentUser?['tenant_id'];
+
+      String? slugToUse = forceSlug ?? _selectedStoreSlug ?? await CatalogService.loadSavedStoreSlug();
+      if (userTenantId != null) {
+        slugToUse = null;
+      }
+
+      final storefront = await CatalogService.getStorefront(store: slugToUse);
+      final rawStores = (storefront['stores'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      Map<String, dynamic>? selected = storefront['selected'] != null
+          ? Map<String, dynamic>.from(storefront['selected'] as Map)
+          : null;
+
+      // Si es superadmin o visitante sin tienda elegida, seleccionar por defecto FashionStore Corp o la primera disponible
+      if (selected == null && rawStores.isNotEmpty) {
+        selected = rawStores.firstWhere(
+          (s) => s['slug'] == 'fashionstore',
+          orElse: () => rawStores.first,
+        );
+        slugToUse = selected['slug']?.toString();
+      } else if (selected != null) {
+        slugToUse = selected['slug']?.toString();
+      }
+
+      await CatalogService.setSelectedStore(slugToUse, selected?['name']?.toString());
+
+      final products = await CatalogService.getProducts(store: slugToUse);
 
       List<dynamic> recommended = [];
-      if (auth.token != null) {
+      if (auth.token != null && userTenantId != null) {
         try {
           recommended = await CatalogService.getRecommendedProducts(limit: 4);
         } catch (_) {}
@@ -79,28 +156,32 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
       if (!mounted) return;
       setState(() {
+        _stores = rawStores;
+        _selectedStoreSlug = slugToUse;
+        _selectedStoreName = selected?['name']?.toString();
         _products = products;
         _filteredProducts = products;
         _recommendedProducts = recommended;
         _isLoading = false;
       });
+      _onSearchChanged();
 
-      // Primera sesión online prepara caché SQLite de sucursal autorizada (Item 10)
-      final branchId =
-          await syncService.cachedBranch() ??
-          auth.currentUser?['branch_id'] as int?;
-      if (branchId != null &&
-          (syncService.lastSyncTimestamp == null ||
-              DateTime.now()
-                      .difference(
-                        DateTime.parse(syncService.lastSyncTimestamp!),
-                      )
-                      .inMinutes >=
-                  15)) {
-        syncService.downloadCatalog(branchId);
+      if (auth.token != null && userTenantId != null) {
+        final branchId =
+            await syncService.cachedBranch() ??
+            auth.currentUser?['branch_id'] as int?;
+        if (branchId != null &&
+            (syncService.lastSyncTimestamp == null ||
+                DateTime.now()
+                        .difference(
+                          DateTime.parse(syncService.lastSyncTimestamp!),
+                        )
+                        .inMinutes >=
+                    15)) {
+          syncService.downloadCatalog(branchId);
+        }
       }
     } catch (e) {
-      // Fallback a base de datos SQLite local
       try {
         final localProds = await syncService.getLocalProducts();
         if (localProds.isNotEmpty && mounted) {
@@ -124,32 +205,38 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
       if (!mounted) return;
       setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error cargando el catálogo')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error cargando el catálogo')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartService>(context);
+    final auth = Provider.of<AuthService>(context);
+    final notif = Provider.of<NotificationService>(context);
+    final canSwitchStore = _stores.length > 1 && auth.currentUser?['tenant_id'] == null;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          context.watch<AuthService>().currentUser?['tenant_name'] ??
-              'Catálogo de la tienda',
+          auth.currentUser?['tenant_name'] ??
+              _selectedStoreName ??
+              'Catálogo FashionStore',
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.calendar_today),
-            tooltip: 'Mis Reservas',
+            icon: Badge(
+              label: Text('${notif.unreadCount}'),
+              isLabelVisible: notif.unreadCount > 0,
+              child: const Icon(Icons.notifications_outlined),
+            ),
+            tooltip: 'Notificaciones',
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ReservationScreen()),
+                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
               );
             },
           ),
@@ -159,6 +246,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               isLabelVisible: cart.totalItemsCount > 0,
               child: const Icon(Icons.shopping_cart),
             ),
+            tooltip: 'Carrito',
             onPressed: () {
               Navigator.push(
                 context,
@@ -166,15 +254,84 @@ class _CatalogScreenState extends State<CatalogScreen> {
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: AppTheme.danger),
-            onPressed: () =>
-                Provider.of<AuthService>(context, listen: false).logout(),
-          ),
+          if (auth.isLoggedIn)
+            IconButton(
+              icon: const Icon(Icons.logout, color: AppTheme.danger),
+              tooltip: 'Cerrar Sesión',
+              onPressed: () async {
+                cart.clearCart();
+                await auth.logout();
+                if (mounted) {
+                  _fetchProducts();
+                }
+              },
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.login, color: AppTheme.primary),
+              tooltip: 'Iniciar Sesión',
+              onPressed: () async {
+                final loggedIn = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const LoginScreen(returnOnSuccess: true),
+                  ),
+                );
+                if (loggedIn == true && mounted) {
+                  _fetchProducts();
+                }
+              },
+            ),
         ],
       ),
       body: Column(
         children: [
+          if (canSwitchStore)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.bgCard,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.primary.withOpacity(0.35)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.storefront, color: AppTheme.primary, size: 20),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Tienda:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _stores.any((s) => s['slug'] == _selectedStoreSlug)
+                              ? _selectedStoreSlug
+                              : (_stores.isNotEmpty ? _stores.first['slug'] as String : null),
+                          isExpanded: true,
+                          dropdownColor: AppTheme.bgCard,
+                          items: _stores
+                              .map(
+                                (s) => DropdownMenuItem<String>(
+                                  value: s['slug']?.toString(),
+                                  child: Text(
+                                    s['name']?.toString() ?? '',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: _onStoreChanged,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           // Barra de búsqueda
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -218,27 +375,71 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               : 'Sin resultados para "${_searchController.text}"',
                           textAlign: TextAlign.center,
                         ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Recargar catálogo'),
+                          onPressed: () {
+                            setState(() => _isLoading = true);
+                            _fetchProducts();
+                          },
+                        ),
                       ],
                     ),
                   )
-                : ListView(
-                    children: [
-                      if (_searchController.text.isEmpty &&
-                          _recommendedProducts.isNotEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                          child: Text(
-                            '✨ Para Ti',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                : RefreshIndicator(
+                    onRefresh: () => _fetchProducts(),
+                    child: ListView(
+                      children: [
+                        if (_searchController.text.isEmpty &&
+                            _recommendedProducts.isNotEmpty) ...[
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Text(
+                              '✨ Para Ti',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        ),
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  childAspectRatio: 0.48,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                ),
+                            itemCount: _recommendedProducts.length,
+                            itemBuilder: (context, index) =>
+                                _buildProductCard(_recommendedProducts[index]),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+                            child: Text(
+                              'Todos los Productos',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                         GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical:
+                                _searchController.text.isEmpty &&
+                                    _recommendedProducts.isNotEmpty
+                                ? 0
+                                : 16,
+                          ),
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: 2,
@@ -246,64 +447,30 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                 crossAxisSpacing: 16,
                                 mainAxisSpacing: 16,
                               ),
-                          itemCount: _recommendedProducts.length,
+                          itemCount: _filteredProducts.length,
                           itemBuilder: (context, index) =>
-                              _buildProductCard(_recommendedProducts[index]),
-                        ),
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
-                          child: Text(
-                            'Todos los Productos',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                              _buildProductCard(_filteredProducts[index]),
                         ),
                       ],
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical:
-                              _searchController.text.isEmpty &&
-                                  _recommendedProducts.isNotEmpty
-                              ? 0
-                              : 16,
-                        ),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              childAspectRatio: 0.48,
-                              crossAxisSpacing: 16,
-                              mainAxisSpacing: 16,
-                            ),
-                        itemCount: _filteredProducts.length,
-                        itemBuilder: (context, index) =>
-                            _buildProductCard(_filteredProducts[index]),
-                      ),
-                    ],
+                    ),
                   ),
           ),
         ],
       ),
-      floatingActionButton: Provider.of<AuthService>(context).token != null
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ChatScreen()),
-                );
-              },
-              backgroundColor: AppTheme.primary,
-              icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
-              label: const Text(
-                'Asistente IA',
-                style: TextStyle(color: Colors.white),
-              ),
-            )
-          : null,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ChatScreen()),
+          );
+        },
+        backgroundColor: AppTheme.primary,
+        icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
+        label: const Text(
+          'Asistente IA',
+          style: TextStyle(color: Colors.white),
+        ),
+      ),
     );
   }
 

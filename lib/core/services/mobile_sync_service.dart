@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../db/database_helper.dart';
 import 'api_service.dart';
+import 'notification_service.dart';
 
 import 'package:http/http.dart' as http;
 
@@ -722,6 +723,16 @@ class MobileSyncService extends ChangeNotifier {
       final confirmed = receiptsAll
           .where((r) => r['status'] == 'CONFIRMADA')
           .length;
+      if (confirmed > 0) {
+        unawaited(
+          NotificationService.instance.notify(
+            title: '🔄 Sincronización Completada',
+            body:
+                '$confirmed operación(es) offline fueron confirmadas en el servidor central.',
+            type: 'sync',
+          ),
+        );
+      }
       return {
         'total_processed': receiptsAll.length,
         'confirmed_count': confirmed,

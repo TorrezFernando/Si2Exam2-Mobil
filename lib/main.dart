@@ -5,7 +5,7 @@ import 'core/theme/theme.dart';
 import 'core/services/auth_service.dart';
 import 'core/services/cart_service.dart';
 import 'core/services/mobile_sync_service.dart';
-import 'features/auth/login_screen.dart';
+import 'core/services/notification_service.dart';
 import 'core/navigation/main_layout.dart';
 
 void main() {
@@ -20,6 +20,7 @@ void main() {
               (cart ?? CartService())..bindAccount(auth.token),
         ),
         ChangeNotifierProvider.value(value: MobileSyncService.instance),
+        ChangeNotifierProvider.value(value: NotificationService.instance),
       ],
       child: const FashionStoreApp(),
     ),
@@ -35,11 +36,7 @@ class FashionStoreApp extends StatelessWidget {
       title: 'FashionStore',
       theme: AppTheme.darkTheme,
       debugShowCheckedModeBanner: false,
-      home: Consumer<AuthService>(
-        builder: (context, auth, _) {
-          return auth.isLoggedIn ? const MainLayout() : const LoginScreen();
-        },
-      ),
+      home: const MainLayout(),
     );
   }
 }

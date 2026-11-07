@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 import '../../core/services/catalog_service.dart';
 import '../../core/services/cart_service.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/product_image.dart';
 import '../ar_fitting/ai_tryon_screen.dart';
+import '../auth/login_screen.dart';
 import '../../core/db/database_helper.dart';
 import '../../core/services/mobile_sync_service.dart';
 
@@ -133,7 +135,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     return 0;
   }
 
-  void _addToCart() {
+  Future<bool> _ensureAuthenticated(String actionLabel) async {
+    final auth = Provider.of<AuthService>(context, listen: false);
+    if (auth.isLoggedIn) return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Inicia sesión para $actionLabel.')),
+    );
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen(returnOnSuccess: true)),
+    );
+    return result == true && mounted && Provider.of<AuthService>(context, listen: false).isLoggedIn;
+  }
+
+  Future<void> _addToCart() async {
+    if (!await _ensureAuthenticated('añadir prendas al carrito y comprar')) return;
     if (_product == null) return;
     if (_product['variants'] != null &&
         _product['variants'].isNotEmpty &&
@@ -174,6 +190,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _reserveProduct() async {
+    if (!await _ensureAuthenticated('reservar prendas')) return;
     final sync = MobileSyncService.instance;
     try {
       final branch = await sync.cachedBranch() ?? sync.assignedBranch;
@@ -225,6 +242,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 '${_selectedVariant['size']} ${_selectedVariant['color']}',
           },
         ],
+      );
+      await NotificationService.instance.notify(
+        title: '📅 Reserva registrada',
+        body:
+            'Reservaste $_quantity unidad(es) de ${_product['name']} (${_selectedVariant['size']} · ${_selectedVariant['color']}).',
+        type: 'reservation',
       );
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
@@ -418,7 +441,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         side: const BorderSide(color: AppTheme.primary),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
+                        if (!await _ensureAuthenticated('usar el probador virtual con IA')) return;
                         if (_selectedVariant == null ||
                             _selectedVariant['id'] == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -431,6 +455,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           return;
                         }
 
+                        if (!mounted) return;
                         Navigator.push(
                           context,
                           MaterialPageRoute(

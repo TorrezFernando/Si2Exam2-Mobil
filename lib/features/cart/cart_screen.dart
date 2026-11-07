@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/auth_service.dart';
 import '../../core/services/cart_service.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/product_image.dart';
+import '../auth/login_screen.dart';
 import '../checkout/checkout_screen.dart';
 
 class CartScreen extends StatelessWidget {
@@ -10,6 +13,7 @@ class CartScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartService>(context);
+    final auth = Provider.of<AuthService>(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Tu Carrito')),
@@ -39,9 +43,12 @@ class CartScreen extends StatelessWidget {
                           width: 50,
                           height: 50,
                           color: AppTheme.bgHover,
-                          child: imageUrl != null
-                              ? Image.network(imageUrl, fit: BoxFit.cover)
-                              : const Icon(Icons.image, color: AppTheme.textMuted),
+                          child: ProductImage(
+                            imageUrl: imageUrl,
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                         title: Text(item.product['name']),
                         subtitle: Text(
@@ -88,7 +95,19 @@ class CartScreen extends StatelessWidget {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () {
+                          onPressed: () async {
+                            if (!auth.isLoggedIn) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Inicia sesión para finalizar tu compra.')),
+                              );
+                              final ok = await Navigator.push<bool>(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const LoginScreen(returnOnSuccess: true),
+                                ),
+                              );
+                              if (ok != true || !context.mounted) return;
+                            }
                             Navigator.push(context, MaterialPageRoute(builder: (_) => const CheckoutScreen()));
                           },
                           child: const Text('Proceder al Pago'),

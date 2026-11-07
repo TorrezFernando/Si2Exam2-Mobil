@@ -7,7 +7,8 @@ import '../../core/navigation/main_layout.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool returnOnSuccess;
+  const LoginScreen({super.key, this.returnOnSuccess = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -27,7 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final authService = Provider.of<AuthService>(context, listen: false);
     final success = await authService.login(
-      _emailController.text,
+      _emailController.text.trim(),
       _passwordController.text,
     );
 
@@ -39,10 +40,14 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       });
       if (success) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const MainLayout()),
-          (route) => false,
-        );
+        if (widget.returnOnSuccess && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop(true);
+        } else {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const MainLayout()),
+            (route) => false,
+          );
+        }
       }
     }
   }
@@ -56,12 +61,16 @@ class _LoginScreenState extends State<LoginScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           color: AppTheme.primary,
-          tooltip: 'Ir al Catálogo',
+          tooltip: 'Volver al Catálogo',
           onPressed: () {
-            Navigator.pushReplacement(
-              context, 
-              MaterialPageRoute(builder: (_) => const CatalogScreen())
-            );
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop(false);
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const MainLayout()),
+              );
+            }
           },
         ),
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/services/api_service.dart';
+import '../../core/services/catalog_service.dart';
 import '../../core/theme/theme.dart';
 import 'dart:convert';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -93,7 +94,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final messagesJson = _messages.map((m) => {'role': m.role, 'content': m.content}).toList();
-      final response = await ApiService.post('/ai/chat', {'messages': messagesJson});
+      final response = await ApiService.post('/ai/chat', {
+        'messages': messagesJson,
+        if (CatalogService.selectedStoreSlug != null)
+          'store': CatalogService.selectedStoreSlug,
+      });
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
