@@ -1,17 +1,24 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+
 import '../../core/widgets/product_image.dart';
 import '../../core/services/api_service.dart';
 import '../../core/theme/theme.dart';
 
 class AITryonScreen extends StatefulWidget {
   final int productId;
+  final int variantId;
+  final String selectedSize;
+  final String selectedColor;
   final String productName;
   final String? productImageUrl;
 
   const AITryonScreen({
     super.key,
     required this.productId,
+    required this.variantId,
+    required this.selectedSize,
+    required this.selectedColor,
     required this.productName,
     this.productImageUrl,
   });
@@ -22,6 +29,8 @@ class AITryonScreen extends StatefulWidget {
 
 class _AITryonScreenState extends State<AITryonScreen> {
   CameraController? _cameraController;
+  List<CameraDescription> _cameras = [];
+  bool _isSwitchingCamera = false;
   bool _isProcessing = false;
   String? _resultImageUrl;
   String? _error;
@@ -37,21 +46,77 @@ class _AITryonScreenState extends State<AITryonScreen> {
     _initializeCamera();
   }
 
-  Future<void> _initializeCamera() async {
+  Future<void> _initializeCamera({CameraDescription? camera}) async {
+    if (_isSwitchingCamera || _isProcessing || !mounted) return;
+    setState(() {
+      _isSwitchingCamera = true;
+      _error = null;
+    });
+    CameraController? next;
     try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) throw Exception('No hay cámara disponible');
-      final frontCamera = cameras.firstWhere((c) => c.lensDirection == CameraLensDirection.front, orElse: () => cameras.first);
-      final controller = CameraController(frontCamera, ResolutionPreset.high, enableAudio: false);
-      _cameraController = controller;
-      await controller.initialize();
-      if (!mounted) { await controller.dispose(); return; }
-      setState(() {});
-    } catch (e) { if (mounted) setState(() => _error = 'No se pudo iniciar la cámara. Revisa los permisos.'); }
+      if (_cameras.isEmpty) _cameras = await availableCameras();
+      if (_cameras.isEmpty) throw StateError('No hay cámara disponible');
+      final selected =
+          camera ??
+          _cameras.firstWhere(
+            (c) => c.lensDirection == CameraLensDirection.front,
+            orElse: () => _cameras.first,
+          );
+      final previous = _cameraController;
+      _cameraController = null;
+      if (mounted) setState(() {});
+      await previous?.dispose();
+      if (!mounted) return;
+      next = CameraController(
+        selected,
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
+      await next.initialize();
+      if (!mounted) {
+        await next.dispose();
+        return;
+      }
+      setState(() {
+        _cameraController = next;
+        _offset = Offset.zero;
+        _scale = 1;
+        _startScale = 1;
+      });
+    } catch (_) {
+      await next?.dispose();
+      if (mounted)
+        setState(
+          () => _error = 'No se pudo iniciar la cámara. Revisa los permisos y vuelve a intentarlo.',
+        );
+    } finally {
+      if (mounted) setState(() => _isSwitchingCamera = false);
+    }
+  }
+
+  void _switchCamera() {
+    if (_isSwitchingCamera || _isProcessing || _cameras.length < 2) return;
+    final current = _cameraController?.description;
+    final targetDirection = current?.lensDirection == CameraLensDirection.front
+        ? CameraLensDirection.back
+        : CameraLensDirection.front;
+    final next = _cameras.firstWhere(
+      (camera) =>
+          camera.lensDirection == targetDirection &&
+          camera.name != current?.name,
+      orElse: () =>
+          _cameras.firstWhere((camera) => camera.name != current?.name),
+    );
+    _initializeCamera(camera: next);
   }
 
   Future<void> _takePhotoAndProcess() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    if (_isSwitchingCamera ||
+        _isProcessing ||
+        _cameraController == null ||
+        !_cameraController!.value.isInitialized) {
+      return;
+    }
 
     setState(() {
       _isProcessing = true;
@@ -60,9 +125,13 @@ class _AITryonScreenState extends State<AITryonScreen> {
 
     try {
       final XFile photo = await _cameraController!.takePicture();
-      
-      final result = await ApiService.generateAiTryOn(widget.productId, photo.path);
-      
+
+      final result = await ApiService.generateAiTryOn(
+        widget.productId,
+        photo.path,
+        widget.variantId,
+      );
+
       if (mounted) {
         setState(() {
           _resultImageUrl = result['result_url'];
@@ -87,7 +156,9 @@ class _AITryonScreenState extends State<AITryonScreen> {
 
   Widget _buildCameraPreview() {
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+      return const Center(
+        child: CircularProgressIndicator(color: AppTheme.primary),
+      );
     }
 
     final size = MediaQuery.of(context).size;
@@ -99,45 +170,83 @@ class _AITryonScreenState extends State<AITryonScreen> {
       children: [
         Transform.scale(
           scale: scale,
-          child: Center(
-            child: CameraPreview(_cameraController!),
-          ),
+          child: Center(child: CameraPreview(_cameraController!)),
         ),
         if (_arMode && widget.productImageUrl != null)
-          Center(child: GestureDetector(
-            onScaleStart: (_) => _startScale = _scale,
-            onScaleUpdate: (details) => setState(() {
-              _scale = (_startScale * details.scale).clamp(0.3, 3.0);
-              _offset += details.focalPointDelta;
-            }),
-            child: Transform.translate(offset: _offset, child: Transform.scale(scale: _scale,
-              child: Opacity(opacity: _opacity, child: ProductImage(imageUrl: widget.productImageUrl, width: 240, height: 320, fit: BoxFit.contain)))),
-          )),
-        Positioned(top: 110, left: 16, right: 16, child: Column(children: [
-          SegmentedButton<bool>(segments: const [ButtonSegment(value: true, label: Text('AR 2D')), ButtonSegment(value: false, label: Text('Foto con IA'))],
-            selected: {_arMode}, onSelectionChanged: (selection) => setState(() => _arMode = selection.first)),
-          if (_arMode) ...[
-            const Text('Arrastra y pellizca para ajustar la prenda. Vista orientativa.', style: TextStyle(color: Colors.white), textAlign: TextAlign.center),
-            Slider(value: _opacity, min: 0.2, max: 1, onChanged: (value) => setState(() => _opacity = value)),
-          ],
-        ])),
-        // Overlay guide
-        if (!_arMode) Positioned.fill(
-          child: CustomPaint(
-            painter: SilhouettePainter(),
-          ),
-        ),
-        if (!_arMode) Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 40.0),
-            child: FloatingActionButton.large(
-              onPressed: _takePhotoAndProcess,
-              backgroundColor: AppTheme.primary,
-              child: const Icon(Icons.camera_alt, color: Colors.white, size: 36),
+          Center(
+            child: GestureDetector(
+              onScaleStart: (_) => _startScale = _scale,
+              onScaleUpdate: (details) => setState(() {
+                _scale = (_startScale * details.scale).clamp(0.3, 3.0);
+                _offset += details.focalPointDelta;
+              }),
+              child: Transform.translate(
+                offset: _offset,
+                child: Transform.scale(
+                  scale: _scale,
+                  child: Opacity(
+                    opacity: _opacity,
+                    child: ProductImage(
+                      imageUrl: widget.productImageUrl,
+                      width: 240,
+                      height: 320,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
+        Positioned(
+          top: 110,
+          left: 16,
+          right: 16,
+          child: Column(
+            children: [
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('AR 2D')),
+                  ButtonSegment(value: false, label: Text('Foto con IA')),
+                ],
+                selected: {_arMode},
+                onSelectionChanged: (selection) =>
+                    setState(() => _arMode = selection.first),
+              ),
+              if (_arMode) ...[
+                const Text(
+                  'Arrastra y pellizca para ajustar la prenda. Vista orientativa; el ajuste real requiere medidas.',
+                  style: TextStyle(color: Colors.white),
+                  textAlign: TextAlign.center,
+                ),
+                Slider(
+                  value: _opacity,
+                  min: 0.2,
+                  max: 1,
+                  onChanged: (value) => setState(() => _opacity = value),
+                ),
+              ],
+            ],
+          ),
         ),
+        // Overlay guide
+        if (!_arMode)
+          Positioned.fill(child: CustomPaint(painter: SilhouettePainter())),
+        if (!_arMode)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 40.0),
+              child: FloatingActionButton.large(
+                onPressed: _takePhotoAndProcess,
+                backgroundColor: AppTheme.primary,
+                child: const Icon(
+                  Icons.camera_alt,
+                  color: Colors.white,
+                  size: 36,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -152,10 +261,15 @@ class _AITryonScreenState extends State<AITryonScreen> {
           fit: BoxFit.cover,
           loadingBuilder: (context, child, progress) {
             if (progress == null) return child;
-            return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+            return const Center(
+              child: CircularProgressIndicator(color: AppTheme.primary),
+            );
           },
           errorBuilder: (context, error, stackTrace) => const Center(
-            child: Text('Error cargando la imagen generada', style: TextStyle(color: Colors.white)),
+            child: Text(
+              'Error cargando la imagen generada',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ),
         SafeArea(
@@ -173,7 +287,10 @@ class _AITryonScreenState extends State<AITryonScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                       icon: const Icon(Icons.refresh),
-                      label: const Text('Reintentar', style: TextStyle(fontSize: 13)),
+                      label: const Text(
+                        'Reintentar',
+                        style: TextStyle(fontSize: 13),
+                      ),
                       onPressed: () => setState(() => _resultImageUrl = null),
                     ),
                   ),
@@ -185,7 +302,10 @@ class _AITryonScreenState extends State<AITryonScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                       icon: const Icon(Icons.check),
-                      label: const Text('¡Me encanta!', style: TextStyle(fontSize: 13)),
+                      label: const Text(
+                        '¡Me encanta!',
+                        style: TextStyle(fontSize: 13),
+                      ),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ),
@@ -203,11 +323,35 @@ class _AITryonScreenState extends State<AITryonScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text('Probador: ${widget.productName}'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.cameraswitch, color: Colors.white),
+            tooltip: _cameras.length < 2
+                ? 'Solo hay una cámara disponible'
+                : _cameraController?.description.lensDirection ==
+                      CameraLensDirection.front
+                ? 'Cambiar a cámara trasera'
+                : 'Cambiar a cámara frontal',
+            onPressed:
+                _isProcessing ||
+                    _isSwitchingCamera ||
+                    _cameras.length < 2 ||
+                    _resultImageUrl != null
+                ? null
+                : _switchCamera,
+          ),
+        ],
+        title: Text(
+          '${widget.productName} · ${widget.selectedSize} / ${widget.selectedColor}',
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+        titleTextStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+        ),
       ),
       extendBodyBehindAppBar: true,
       body: _isProcessing
@@ -217,38 +361,57 @@ class _AITryonScreenState extends State<AITryonScreen> {
                 children: const [
                   CircularProgressIndicator(color: AppTheme.primary),
                   SizedBox(height: 24),
-                  Text('✨ Gemini está ajustando la prenda...', 
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(
+                    '✨ Gemini está ajustando la prenda...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   SizedBox(height: 8),
-                  Text('Calculando luces y sombras...', 
-                    style: TextStyle(color: Colors.grey, fontSize: 14)),
+                  Text(
+                    'Calculando luces y sombras...',
+                    style: TextStyle(color: Colors.grey, fontSize: 14),
+                  ),
                 ],
               ),
             )
           : _resultImageUrl != null
-              ? _buildResultView()
-              : _error != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.error_outline, color: AppTheme.danger, size: 64),
-                            const SizedBox(height: 16),
-                            Text('Ocurrió un error:\n$_error', 
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.white)),
-                            const SizedBox(height: 24),
-                            ElevatedButton(
-                              onPressed: () { setState(() => _error = null); if (_cameraController == null || !_cameraController!.value.isInitialized) _initializeCamera(); },
-                              child: const Text('Reintentar'),
-                            )
-                          ],
-                        ),
-                      ),
-                    )
-                  : _buildCameraPreview(),
+          ? _buildResultView()
+          : _error != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: AppTheme.danger,
+                      size: 64,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Ocurrió un error:\n$_error',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() => _error = null);
+                        if (_cameraController == null ||
+                            !_cameraController!.value.isInitialized)
+                          _initializeCamera();
+                      },
+                      child: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : _buildCameraPreview(),
     );
   }
 }
@@ -271,11 +434,16 @@ class SilhouettePainter extends CustomPainter {
 
     final path = Path();
     path.moveTo(size.width * 0.2, size.height * 0.5);
-    path.quadraticBezierTo(size.width * 0.5, size.height * 0.4, size.width * 0.8, size.height * 0.5);
+    path.quadraticBezierTo(
+      size.width * 0.5,
+      size.height * 0.4,
+      size.width * 0.8,
+      size.height * 0.5,
+    );
     path.lineTo(size.width * 0.9, size.height);
     path.lineTo(size.width * 0.1, size.height);
     path.close();
-    
+
     canvas.drawPath(path, paint);
   }
 

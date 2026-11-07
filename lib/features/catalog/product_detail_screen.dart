@@ -419,13 +419,29 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                       onPressed: () {
+                        if (_selectedVariant == null ||
+                            _selectedVariant['id'] == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Selecciona una talla y color antes de probar.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => AITryonScreen(
                               productId: _product['id'],
+                              variantId: _selectedVariant['id'],
+                              selectedSize: _selectedVariant['size'] ?? '',
+                              selectedColor: _selectedVariant['color'] ?? '',
                               productName: _product['name'],
                               productImageUrl:
+                                  _selectedVariant?['image_url'] ??
                                   _product['garment_image_url'] ??
                                   _product['image_url'],
                             ),

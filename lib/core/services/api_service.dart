@@ -9,7 +9,7 @@ class ApiService {
   static String get baseUrl {
     const value = String.fromEnvironment(
       'API_BASE_URL',
-      defaultValue: 'http://10.0.2.2:8000/api/v1',
+      defaultValue: 'https://136.80.138.162.sslip.io/api/v1',
     );
     final uri = Uri.parse(value);
     if (kReleaseMode && uri.scheme != 'https') {
@@ -103,6 +103,7 @@ class ApiService {
   static Future<Map<String, dynamic>> generateAiTryOn(
     int productId,
     String imagePath,
+    int variantId,
   ) async {
     final headers = await _getHeaders();
     headers.remove('Content-Type'); // Let the multipart request set it
@@ -113,6 +114,7 @@ class ApiService {
     );
     request.headers.addAll(headers);
     request.fields['product_id'] = productId.toString();
+    request.fields['variant_id'] = variantId.toString();
     request.files.add(
       await http.MultipartFile.fromPath(
         'user_photo',
@@ -121,14 +123,19 @@ class ApiService {
       ),
     );
 
-    final streamedResponse = await request.send();
-    final response = await http.Response.fromStream(streamedResponse);
+    final streamedResponse = await request.send().timeout(
+      const Duration(seconds: 170),
+    );
+    final response = await http.Response.fromStream(streamedResponse)
+        .timeout(const Duration(seconds: 170));
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body);
     } else {
       throw Exception(
-        'Failed to generate try-on: ${response.statusCode} - ${response.body}',
+        jsonDecode(response.body)['detail'] is String
+            ? jsonDecode(response.body)['detail']
+            : 'No se pudo generar la imagen. Reintenta en unos minutos.',
       );
     }
   }
