@@ -403,7 +403,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               child: Text(
                 syncService.isOffline
                     ? 'Modo Offline: La venta se registrará como pago en efectivo y se sincronizará con el inventario central.'
-                    : 'Paga en Libélula con los medios habilitados por el comercio. No ingreses datos de tarjeta en esta aplicación.',
+                    : 'Paga en PayPal con tu cuenta o con tarjeta (cobro en USD). No ingreses datos de tarjeta en esta aplicación.',
               ),
             ),
           if (_error != null)
@@ -458,7 +458,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           _paid = isPaidNow;
           _message = _paid
               ? 'Pago confirmado. Gracias por tu compra.'
-              : 'Libélula aún no confirma el pago.';
+              : 'PayPal aún no confirma el pago.';
         });
         if (isPaidNow) {
           await NotificationService.instance.notify(
@@ -495,7 +495,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         if (!_paid) ...[
           ElevatedButton(
             onPressed: _busy ? null : () => _perform(false),
-            child: const Text('Abrir Libélula'),
+            child: const Text('Pagar en PayPal'),
           ),
           OutlinedButton(
             onPressed: _busy ? null : () => _perform(true),
